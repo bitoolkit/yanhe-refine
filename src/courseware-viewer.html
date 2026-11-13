@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原课件预览</title>
+<link rel="stylesheet" href="courseware-viewer.css">
+<body>
+ <header class="document-toolbar">
+  <button id="previous" aria-label="上一页" disabled>‹</button>
+  <label class="page-picker"><input id="page" type="number" min="1" value="1" aria-label="课件页码" disabled><span id="page-count">/ —</span></label>
+  <button id="next" aria-label="下一页" disabled>›</button>
+  <select id="zoom" aria-label="课件缩放" disabled><option value="fit">适合宽度</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option></select>
+  <button id="reload" aria-label="刷新课件" title="刷新课件">↻</button>
+  <a id="original" target="_blank" rel="noopener noreferrer">原站</a>
+ </header>
+ <main id="pages" aria-label="课件页面" tabindex="0"></main>
+ <div id="notice" role="status"><p id="message">正在读取课件…</p><button id="retry" hidden>重新加载课件</button></div>
+ <script type="module" src="courseware-viewer.js"></script>
+</body>
+</html>

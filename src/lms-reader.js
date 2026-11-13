@@ -1,4 +1,7 @@
 import {lmsCourses,homeworkRows,materialRows,resourceRows,homeworkDetail,submissionRows,published} from './lms-core.js';
+import {quizActivity,quizRows,quizSubjects,quizVersion,quizPreviewUrl} from './ppt-quiz.js';
+import {readPool} from './read-pool.js';
+import {isTrue} from './catalog-core.js';
 export const LMS_ORIGIN='https://zy-eclass.bit.edu.cn';
 export function numeric(value){if(!/^\d{1,12}$/.test(String(value)))throw new Error('编号无效');return String(value);}
 export class LmsReader {
@@ -48,6 +51,53 @@ export class LmsReader {
   }
   const userId=await this.userId(courseId,signal),body=await this.get(`/api/activities/${id}/students/${userId}/submission_list`,12000,signal);
   return {rows:submissionRows(body),groupName:'',inGroup:true};
+ }
+ async pptHomeworks(courseId,signal){
+  await this.own(courseId,false,signal);
+  const body=await this.get(`/api/course/${courseId}/courseware-activities`,12000,signal);
+  const rows=Array.isArray(body)?body:body.learning_activities||body.courseware_activities||body.activities;
+  if(!Array.isArray(rows))throw new Error('未能读取课件活动');
+  const entries=rows.filter(entry=>published(entry)&&quizActivity(entry));
+  const results=await readPool(entries,2,async entry=>{
+   if(entry.course_id!=null&&String(entry.course_id)!==String(courseId))throw new Error('课件所属课程不一致');
+   const quizzes=await this.get(`/api/courseware-quiz/activity/${numeric(entry.id)}/quizzes`,12000,signal);
+   if(!Array.isArray(quizzes))throw new Error('PPT 答题列表格式异常');
+   if(!quizzes.some(quiz=>Number(quiz.subjects_count)>0))return [];
+   const references=await this.get(`/api/activities/${entry.id}/upload_references`,12000,signal);
+   return quizRows(quizzes,references,entry,courseId,this.courseTerms.get(String(courseId)));
+  },{signal});
+  return results.flatMap((result,index)=>result.ok?result.value:[{id:`ppt:${entries[index].id}:unavailable`,type:'ppt-quiz-error',
+   courseId:String(courseId),activityId:String(entries[index].id),title:entries[index].title+' · PPT 答题未同步',state:'unknown',detailError:true,
+   deadline:null,url:`${LMS_ORIGIN}/course/${courseId}/learning-activity#/${entries[index].id}`}]);
+ }
+ async pptQuizActivity(courseId,id,quizId,signal){
+  numeric(quizId);const entry=await this.activity(courseId,id,signal);
+  if(!quizActivity(entry))throw new Error('当前活动不支持 PPT 答题');
+  const [quizzes,references,activity]=await Promise.all([
+   this.get(`/api/courseware-quiz/activity/${id}/quizzes`,12000,signal),
+   this.get(`/api/activities/${id}/upload_references`,12000,signal),this.get(`/api/activities/${id}`,12000,signal)
+  ]);
+  if(String(activity.id)!==String(id)||String(activity.course_id)!==String(courseId)||!published(activity))throw new Error('PPT 活动与当前课程不一致');
+  const row=quizRows(quizzes,references,activity,courseId,this.courseTerms.get(String(courseId))).find(row=>row.quizId===String(quizId));
+  if(!row)throw new Error('未找到该课件的答题活动');
+  return {row,activity};
+ }
+ async quizPreview(courseId,id,quizId,signal){
+  const {row}=await this.pptQuizActivity(courseId,id,quizId,signal);
+  const descriptor=await this.get(`/api/uploads/reference/document/${numeric(row.referenceId)}/url`,12000,signal);
+  if(descriptor.status!=='ready')throw new Error('课件正在转换，请稍后重试');
+  return {url:quizPreviewUrl(descriptor.url),title:row.title.replace(/ · PPT 答题$/,'')};
+ }
+ async pptQuiz(courseId,id,quizId,signal){
+  const {row,activity}=await this.pptQuizActivity(courseId,id,quizId,signal);
+  const [questions,history]=await Promise.all([this.get(`/api/courseware-quiz/quiz/${quizId}/subjects`,12000,signal),this.get(`/api/courseware-quiz/quiz/${quizId}/my-submission`,12000,signal)]);
+  if(!Object.hasOwn(history,'submission')||history.submission&&String(history.submission.quiz_id)!==String(quizId))throw new Error('未能确认本人答题记录');
+  const subjects=quizSubjects(questions),used=Number(history.submission?.submitted_times||0),limit=Number(history.submit_times??1);
+  if(!Number.isInteger(used)||used<0||!Number.isInteger(limit)||limit<0)throw new Error('未能确认答题次数');
+  const supported=subjects.every(subject=>subject.supported),open=isTrue(activity.is_in_progress)&&!row.closed;
+  return {...row,subjects,version:quizVersion(subjects),used,limit,state:used>0?'submitted':'pending',
+   answers:history.submission?.submission_data?.subjects_answers||[],submissionId:history.submission?.id?String(history.submission.id):null,
+   canSubmit:supported&&open&&used<limit,submitReason:!supported?'部分题型请在原站作答':!open?'当前不在答题时间内':used>=limit?'已达到答题次数上限':''};
  }
  async read({kind,id,courseId,page=1,force=false,signal}){
   signal?.throwIfAborted();

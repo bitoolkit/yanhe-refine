@@ -49,6 +49,8 @@ try{
    throw Error('Unexpected Moodle path '+path);
   }
   if(u.hostname==='zy-eclass.bit.edu.cn'){
+   if(/^\/api\/courseware-quiz\/activity\/\d+\/quizzes$/.test(path))return json([]);
+   if(path.endsWith('/courseware-activities'))return json([]);
    if(path==='/api/my-courses'&&badNewCourses)return route.fulfill({status:503,contentType:'application/json',body:'{}'});
    if(badTermCatalog&&['/api/my-academic-years','/api/my-semesters-all','/api/my-semesters'].includes(path))return route.fulfill({status:503,contentType:'application/json',body:'{}'});
    if(path==='/api/my-courses')return json({courses:[{id:401,name:'新版课程',academic_year:{id:81},semester:{id:902}},...Array.from({length:54},(_,i)=>({id:402+i,name:'新版历史课程'+i,academic_year:80,semester:901}))]});

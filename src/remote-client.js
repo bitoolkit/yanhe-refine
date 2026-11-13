@@ -27,6 +27,9 @@ export class RemoteLms{
  materials=(id,options)=>request('lms',{method:'materials',args:[id]},options);
  resources=(courseId,id)=>request('lms',{method:'resources',args:[courseId,id]});
  task=(courseId,id)=>request('lms',{method:'task',args:[courseId,id]});
+ quiz=(courseId,id,quizId)=>request('lms',{method:'quiz',args:[courseId,id,quizId]});
+ quizPreview=(courseId,id,quizId)=>request('lms',{method:'quizPreview',args:[courseId,id,quizId]});
+ submitQuiz=(courseId,id,quizId,payload)=>request('lmsWrite',{method:'submitQuiz',args:[courseId,id,quizId,payload]});
  upload=(courseId,id,file)=>request('lmsWrite',{method:'upload',args:[courseId,id,file]});
  submit=(courseId,id,payload)=>request('lmsWrite',{method:'submit',args:[courseId,id,payload]});
 }

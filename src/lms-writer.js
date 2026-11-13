@@ -1,4 +1,5 @@
 import {LMS_ORIGIN,numeric} from './lms-reader.js';
+import {quizAnswers,sameQuizAnswers} from './ppt-quiz.js';
 
 export const MAX_UPLOAD_BYTES=32*1024*1024;
 export function storageUploadUrl(info){
@@ -25,6 +26,43 @@ export class LmsWriter{
   const data=await response.json();if(data.errors||data.success===false){const e=new Error(String(data.message||'平台未接受本次操作'));e.status=400;throw e;}return data;
  }
  async preflight(courseId,id){await this.reader.own(courseId,true);const detail=await this.reader.read({kind:'task',courseId,id});if(!detail.canSubmit)throw new Error(detail.submitReason||'当前作业不可提交');return detail;}
+ async submitQuiz(courseId,id,quizId,payload){
+  numeric(courseId);numeric(id);numeric(quizId);
+  const {requestId,version,answers}=payload||{};
+  if(!/^[a-zA-Z0-9-]{16,80}$/.test(requestId||'')||typeof version!=='string'||version.length>2000000)throw new Error('答题提交信息无效');
+  const userId=await this.reader.userId(courseId),key=`desk:quiz-submission:${userId}:${courseId}:${id}:${quizId}:${requestId}`;
+  const scope=key.slice(0,key.lastIndexOf(':'));
+  if(this.flights.has(scope))throw new Error('这份课件正在提交，请稍候');
+  const flight=this.submitQuizOnce(courseId,id,quizId,{version,answers,userId,key,scope});this.flights.set(scope,flight);
+  try{return await flight;}finally{this.flights.delete(scope);}
+ }
+ async submitQuizOnce(courseId,id,quizId,{version,answers,userId,key,scope}){
+  const saved=(await this.session?.get(key))?.[key];if(saved)return saved;
+  await this.reader.own(courseId,true);
+  const before=await this.reader.pptQuiz(courseId,id,quizId);
+  if(await this.reader.userId(courseId)!==userId)throw new Error('新乐学账号已切换，请刷新后重试');
+  const pendingKey=scope+':pending',pending=(await this.session?.get(pendingKey))?.[pendingKey];
+  const uncertain={status:'uncertain',message:'答题结果待核对，请刷新作答记录'};
+  if(pending){
+   if(before.used>pending.used&&before.submissionId&&sameQuizAnswers(pending.answers,before.answers)){
+    const confirmed={status:'submitted',id:before.submissionId};await this.session?.set({[key]:confirmed});await this.session?.remove(pendingKey);return confirmed;
+   }
+   return uncertain;
+  }
+  if(!before.canSubmit)throw new Error(before.submitReason||'当前课件不可答题');
+  if(before.version!==version)throw new Error('题目已更新，请刷新后重新核对答案');
+  const expected=quizAnswers(before.subjects,answers);
+  if(await this.reader.userId(courseId)!==userId)throw new Error('新乐学账号已切换，请刷新后重试');
+  await this.session?.set({[pendingKey]:{used:before.used,answers:expected}});
+  try{await this.post(`/api/courseware-quiz/quiz/${quizId}/submissions`,{subjects_answers:expected});}
+  catch(error){if(error.status>=400&&error.status<500&&error.status!==408){await this.session?.remove(pendingKey);throw error;}}
+  try{
+   if(await this.reader.userId(courseId)!==userId)return uncertain;
+   const after=await this.reader.pptQuiz(courseId,id,quizId);
+   if(after.used<=before.used||!after.submissionId||!sameQuizAnswers(expected,after.answers))return uncertain;
+   const confirmed={status:'submitted',id:after.submissionId};await this.session?.set({[key]:confirmed});await this.session?.remove(pendingKey);return confirmed;
+  }catch{return uncertain;}
+ }
  async upload(courseId,id,file){
   numeric(courseId);numeric(id);const bytes=validateFile(file);await this.preflight(courseId,id);
   const info=await this.post('/api/uploads',{name:file.name,size:file.size,parent_type:null,parent_id:0,is_scorm:false,is_wmpkg:false,source:'',is_marked_attachment:false,embed_material_type:''});

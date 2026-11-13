@@ -44,3 +44,9 @@ The personal course index is user-provided data, excluded from the public packag
 HLS playback uses the full hls.js 1.7.3 build so platform-provided alternate audio playlists can be loaded. The upstream Apache-2.0 license remains included.
 
 The static `watch/vendor/hls.worker.js` is also from the official hls.js 1.7.3 npm package. It runs media transmuxing under the existing same-origin worker policy. See the upstream [worker configuration documentation](https://github.com/video-dev/hls.js/blob/v1.7.3/docs/API.md#workerpath).
+
+## PPT 答题公式
+
+[KaTeX](https://github.com/KaTeX/KaTeX) 0.19.1 用于本地渲染题目公式，采用 MIT 许可证，随包附带 `licenses/katex.LICENSE`。
+
+[Mozilla PDF.js](https://github.com/mozilla/pdf.js) 6.5.438 用于课件预览，采用 Apache-2.0 许可证，随包附带 `licenses/pdfjs-dist.LICENSE`。字符映射、标准字体及图像解码器各自的许可随对应资源目录保留。

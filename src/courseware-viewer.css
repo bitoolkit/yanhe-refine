@@ -1,0 +1,14 @@
+:root{font:14px/1.5 "Microsoft YaHei",system-ui,sans-serif;color:#102a43;background:#e8edf1}
+*{box-sizing:border-box}body{margin:0;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+button,input,select{font:inherit;color:inherit;border:1px solid #d5e0e8;border-radius:5px;background:#fff}
+button{cursor:pointer;padding:4px 10px}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #007b83;outline-offset:2px}
+.document-toolbar{display:flex;align-items:center;gap:7px;flex-shrink:0;padding:9px 12px;background:#f8fafb;border-bottom:1px solid #d5e0e8}
+.page-picker{display:flex;align-items:center;gap:6px;white-space:nowrap}.page-picker input{width:55px;padding:4px 5px;text-align:center}
+.document-toolbar select{min-width:0;max-width:120px;margin-left:5px;padding:5px}.document-toolbar a{color:#007b83;margin-left:auto;text-decoration:none;white-space:nowrap}
+#pages{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 12px 12px;scrollbar-gutter:stable}
+.document-page{position:relative;background:#fff;margin:12px auto 0;box-shadow:0 1px 5px #102a4320;overflow:hidden}
+.document-page::before{content:attr(aria-label);position:absolute;top:12px;left:14px;font-size:12px;color:#627d98}.document-page:has(canvas)::before{display:none}
+.document-page canvas{display:block;width:100%;height:100%}
+#notice{position:absolute;inset:47px 0 0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;padding:24px;text-align:center;background:#e8edf1}
+#notice[hidden],button[hidden]{display:none}#message{margin:0;color:#627d98}
+@media(max-width:420px){.document-toolbar{gap:5px;padding:8px}.document-toolbar select{max-width:104px}.document-toolbar button{padding:4px 8px}}

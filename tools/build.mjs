@@ -6,11 +6,14 @@ import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),src=join(root,'src'),out=join(root,'extension');
 await mkdir(out,{recursive:true});
-for(const name of ['desk.html','desk.css','ui-icons.svg','manifest.json','content.css'])await copyFile(join(src,name),join(out,name));
-for(const [input,output,format]of [['standalone.js','desk.js','esm'],['background.js','background.js','esm'],['catalog-worker.js','catalog-worker.js','esm'],['content.js','content.js','iife'],['site-preload.js','site-preload.js','iife'],['redirect.js','redirect.js','esm']])
+for(const name of ['desk.html','desk.css','ui-icons.svg','manifest.json','content.css','courseware-viewer.html','courseware-viewer.css'])await copyFile(join(src,name),join(out,name));
+for(const [input,output,format]of [['standalone.js','desk.js','esm'],['background.js','background.js','esm'],['catalog-worker.js','catalog-worker.js','esm'],['content.js','content.js','iife'],['site-preload.js','site-preload.js','iife'],['redirect.js','redirect.js','esm'],['courseware-viewer.js','courseware-viewer.js','esm']])
  await build({entryPoints:[join(src,input)],outfile:join(out,output),bundle:true,format,platform:'browser',target:'chrome120',loader:{'.html':'text','.css':'text','.svg':'text'},legalComments:'linked',sourcemap:false,minify:false});
 async function copyTree(from,to){await mkdir(to,{recursive:true});for(const entry of await readdir(from,{withFileTypes:true})){const a=join(from,entry.name),b=join(to,entry.name);if(entry.isDirectory())await copyTree(a,b);else await copyFile(a,b);}}
 await copyTree(join(src,'watch'),join(out,'watch'));
+await mkdir(join(out,'pdfjs'),{recursive:true});
+await copyFile(join(root,'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'),join(out,'pdfjs/pdf.worker.mjs'));
+for(const folder of ['cmaps','standard_fonts','wasm'])await copyTree(join(root,'node_modules/pdfjs-dist',folder),join(out,'pdfjs',folder));
 await rm(join(out,'watch/vendor/hls.light.min.js'),{force:true});
 try{await copyFile(join(root,'local-data/legacy-session-index.json'),join(out,'legacy-session-index.json'));}catch(error){if(error.code!=='ENOENT')throw error;await rm(join(out,'legacy-session-index.json'),{force:true});}
 await writeFile(join(out,'player.html'),'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>延河课堂</title><script type="module" src="redirect.js"></script></html>');
@@ -32,6 +35,6 @@ for(const size of [16,32,48,128]){const raw=Buffer.alloc((size*4+1)*size);for(le
 await mkdir(join(out,'licenses'),{recursive:true});
 await copyTree(join(root,'licenses'),join(out,'licenses'));
 for(const [from,name]of [['node_modules/fflate/LICENSE','fflate.LICENSE']])await copyFile(join(root,from),join(out,'licenses',name));
-for(const packageName of ['saxes','xmlchars','parse5','entities']){for(const name of ['LICENSE','LICENSE.txt'])try{await copyFile(join(root,'node_modules',packageName,name),join(out,'licenses',packageName+'.LICENSE'));break;}catch(e){if(e.code!=='ENOENT')throw e;}}
+for(const packageName of ['saxes','xmlchars','parse5','entities','katex','pdfjs-dist']){for(const name of ['LICENSE','LICENSE.txt'])try{await copyFile(join(root,'node_modules',packageName,name),join(out,'licenses',packageName+'.LICENSE'));break;}catch(e){if(e.code!=='ENOENT')throw e;}}
 await copyFile(join(root,'LICENSE'),join(out,'LICENSE'));
 console.log(JSON.stringify({version:pkg.version,extension:out,localCatalog:info.catalog?.count||0}));

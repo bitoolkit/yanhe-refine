@@ -15,6 +15,14 @@ const output=join(root,'test-results'),testRoot=await mkdtemp(join(tmpdir(),'yan
 await cp(ext,testExt,{recursive:true});
 await installMoodleFileFixture(testExt);
 await installSignedOutRecoveryFixture(testExt);
+// Synthetic drops lack native directory entries in the content script's isolated world.
+const contentScript=join(testExt,'content.js');
+await writeFile(contentScript,`(()=>{
+ const original=DataTransferItem.prototype.webkitGetAsEntry;
+ DataTransferItem.prototype.webkitGetAsEntry=function(){
+  return this.getAsFile()?.name==='fixture-directory'?{isDirectory:true}:original?.call(this);
+ };
+})();\n`+await readFile(contentScript,'utf8'));
 await rm(join(testExt,'legacy-session-index.json'),{force:true}); // Keep synthetic legacy metadata independent of an optional personal snapshot.
 const testCourses=[{id:102178,title:'计算机视觉',teacher:'裴明涛',term:'2026-2027-1',platform:'modern'},...Array.from({length:20},(_,i)=>({id:70000+i,title:'计算机视觉',teacher:'裴明涛',term:'2024-2025-1',platform:'modern'})),{id:60001,title:'计算机视觉',teacher:'裴明涛',term:'2023-2024-1',platform:'legacy'},{id:73694,title:'计算机视觉',teacher:'张老师',term:'2025-2026-1',platform:'legacy'},{id:73694,title:'计算机视觉',teacher:'裴明涛',term:'2025-2026-2',platform:'modern'}];
 testCourses.push(...Array.from({length:45},(_,i)=>({id:85000+i,title:'分页课程',teacher:'分页老师',term:'2024-2025-1',platform:i%2?'modern':'legacy'})));
@@ -40,7 +48,7 @@ try{
   globalThis.fixtureDownloads.push(options);return download({...options,url:'data:text/plain;base64,c3ludGhldGljIGF0dGFjaG1lbnQ='});
  };});
  report.browserVersion=context.browser()?.version();
- const errors=[],requests=[],unexpected=[];let enrolledBroken=false,offline=false,lmsOffline=false,roomBroken=false,legacyStatus=1,submitted=null,submissionPosts=0,lexueConnected=false,crossCourse=false,delayOperatingSystem=false,releaseOperatingSystem,operatingSystemStarted;
+ const errors=[],requests=[],unexpected=[];let enrolledBroken=false,offline=false,lmsOffline=false,roomBroken=false,legacyStatus=1,submitted=null,submissionPosts=0,lexueConnected=false,crossCourse=false,delayOperatingSystem=false,releaseOperatingSystem,operatingSystemStarted,holdUpload=false,uploadStarted,releaseUpload;
  context.on('page',p=>{p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='warning')console.log(m.text());});});
  const modernToken='desk-test-opaque-0123456789',oldToken='d'.repeat(32);
  const cookie=encodeURIComponent(`a:2:{i:0;s:6:"_token";i:1;s:${modernToken.length}:"${modernToken}";}`);
@@ -73,9 +81,10 @@ try{
   }
   if(u.hostname==='zy-media.bit.edu.cn'&&path==='/upload/file/9001'){
    assert.equal(req.method(),'PUT');assert.equal(req.headers()['x-xsrf-token'],undefined);assert.equal(req.headers().cookie,undefined);
-   assert.match(req.headers()['content-type'],/multipart\/form-data/);assert.ok(req.postDataBuffer().includes(Buffer.from('synthetic answer')));return route.fulfill({body:''});
+   assert.match(req.headers()['content-type'],/multipart\/form-data/);assert.ok(req.postDataBuffer().includes(Buffer.from('synthetic answer')));if(holdUpload){uploadStarted();await new Promise(resolve=>releaseUpload=resolve);}return route.fulfill({body:''});
   }
   if(u.hostname==='zy-eclass.bit.edu.cn'){
+   if(/^\/api\/courseware-quiz\/activity\/\d+\/quizzes$/.test(path))return json([]);
    if(lmsOffline)return route.fulfill({status:200,contentType:'text/html',body:'<html>Login</html>'});
    if(path==='/api/my-courses')return json({courses:[{id:20290,name:'计算机视觉',course_code:'EL3105',academic_year:{id:81,name:'2026-2027'},semester:{id:901,real_name:'第一学期'}},...(crossCourse?[[20291,'操作系统'],[20292,'计算机组成与原理']].map(([id,name])=>({id,name,academic_year:{id:81,name:'2026-2027'},semester:{id:901,real_name:'第一学期'}})):[])]});
    if(crossCourse&&/^\/api\/(?:course|courses)\/(20291|20292)\//.test(path)){const id=path.match(/(20291|20292)/)[0];if(path.endsWith('/courseware-activities')){if(id==='20291'&&delayOperatingSystem){operatingSystemStarted?.();await new Promise(resolve=>releaseOperatingSystem=resolve);}return json([{id:Number(id)+1000,course_id:Number(id),type:'material',title:id==='20291'?'操作系统新资料':'计算机组成与原理新资料',published:true}]);}if(path.endsWith('/homework-activities'))return json({page:1,pages:1,homework_activities:[]});if(path.endsWith('/submission-status'))return json({homework_activities:[]});}
@@ -182,14 +191,45 @@ try{
  await page.getByRole('button',{name:'下载',exact:true}).click();await page.getByRole('button',{name:'已下载',exact:true}).waitFor({timeout:20000});
  const downloads=await worker.evaluate(()=>chrome.downloads.search({}));assert.equal(downloads.length,1);assert.equal(downloads[0].state,'complete');assert.ok(resolve(downloads[0].filename).startsWith(resolve(testRoot)));assert.equal(await readFile(downloads[0].filename,'utf8'),'synthetic attachment');
  await page.getByRole('textbox',{name:'作业内容',exact:true}).fill('合成作业回答 <tag>');
- await page.getByLabel('选择作业附件').setInputFiles({name:'answer.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic answer')});
+ const form=page.locator('.submission-form'),picker=page.getByLabel('选择作业附件'),picked=page.locator('.picked-file');
+ const dropFiles=(target,files)=>target.evaluate((element,files)=>{
+  const transfer=new DataTransfer();
+  for(const entry of files){
+   const file=new File([entry.size==null?entry.content||'':new Uint8Array(entry.size)],entry.name,{type:entry.type||'text/plain',lastModified:1});
+   transfer.items.add(file);
+  }
+  const event=new DragEvent('drop',{dataTransfer:transfer,bubbles:true,cancelable:true,composed:true});element.dispatchEvent(event);return event.defaultPrevented;
+ },files);
+ await picker.setInputFiles({name:'first.txt',mimeType:'text/plain',buffer:Buffer.from('first file')});
+ assert.equal(await dropFiles(form,[{name:'second.txt',content:'second file'}]),true);assert.equal(await picked.count(),2);
+ await dropFiles(form,[{name:'second.txt',content:'second file'}]);assert.equal(await picked.count(),2);assert.equal(await picker.evaluate(input=>input.files.length),2);
+ await form.evaluate(element=>{
+  const transfer=new DataTransfer();transfer.items.add(new File(['hover'],'hover.txt'));
+  for(const target of [element,element.querySelector('input')])target.dispatchEvent(new DragEvent('dragenter',{dataTransfer:transfer,bubbles:true,cancelable:true}));
+  element.querySelector('input').dispatchEvent(new DragEvent('dragleave',{dataTransfer:transfer,bubbles:true}));
+ });
+ assert.equal(await page.locator('.upload-choice.drag-over').count(),1);
+ await form.dispatchEvent('dragleave');assert.equal(await page.locator('.upload-choice.drag-over').count(),0);
+ for(const files of [[{name:'empty.txt',content:''}],[{name:'large.zip',size:32*1024*1024+1}],Array.from({length:31},(_,i)=>({name:'file-'+i+'.txt',content:'x'}))]){
+  await dropFiles(form,files);assert.equal(await picked.count(),2);assert.match(await page.locator('.submission-notice').innerText(),/最多 30 个附件/);
+ }
+ await picker.setInputFiles({name:'empty.txt',mimeType:'text/plain',buffer:Buffer.alloc(0)});assert.equal(await picked.count(),2);assert.equal(await picker.evaluate(input=>input.files.length),2);
+ await dropFiles(form,[{name:'fixture-directory',content:'x'}]);assert.match(await page.locator('.submission-notice').innerText(),/文件夹压缩/);assert.equal(await picked.count(),2);
+ assert.equal(await dropFiles(page.locator('.task-meta').first(),[{name:'outside.txt',content:'x'}]),true);assert.equal(await picked.count(),2);
+ assert.equal(await form.evaluate(element=>{const transfer=new DataTransfer();transfer.setData('text/plain','dragged text');const event=new DragEvent('drop',{dataTransfer:transfer,bubbles:true,cancelable:true});element.dispatchEvent(event);return event.defaultPrevented;}),false);
+ report.checks.push('file drops append and deduplicate attachments; invalid sizes, counts and directories preserve selection; file hover remains stable and outside drops cannot navigate');
+ await picker.setInputFiles([]);assert.equal(await picked.count(),0);
+ await dropFiles(form,[{name:'answer.zip',content:'synthetic answer',type:'application/zip'}]);assert.equal(await picked.count(),1);assert.match(await picked.innerText(),/answer\.zip/);
+
  assert.equal(requests.filter(r=>r.method==='POST'||r.method==='PUT').length,0,'selecting a local file does not upload it');
  await page.screenshot({path:join(output,'site-task.png'),fullPage:true});await page.setViewportSize({width:375,height:900});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.equal(await page.locator('#resources-dialog').evaluate(e=>e.scrollWidth>e.clientWidth+1),false);
  await page.screenshot({path:join(output,'site-task-mobile.png'),fullPage:true});await page.setViewportSize({width:1440,height:1000});
- await page.getByRole('button',{name:'提交作业',exact:true}).click();await page.getByText('提交记录 · 1',{exact:true}).waitFor();assert.equal(submissionPosts,1);assert.equal(await page.locator('.submission-entry .rich-content').innerText(),'合成作业回答 <tag>');
+ holdUpload=true;const uploading=new Promise(resolve=>uploadStarted=resolve);await page.getByRole('button',{name:'提交作业',exact:true}).click();await uploading;
+ try{assert.equal(await picker.isDisabled(),true);await dropFiles(form,[{name:'late.txt',content:'ignored while uploading'}]);assert.equal(await picked.count(),1);assert.match(await picked.innerText(),/answer\.zip/);}finally{holdUpload=false;releaseUpload();}
+ await page.getByText('提交记录 · 1',{exact:true}).waitFor();assert.equal(submissionPosts,1);assert.equal(await page.locator('.submission-entry .rich-content').innerText(),'合成作业回答 <tag>');
  assert.match(await page.locator('.submission-entry .attachment-name').innerText(),/answer\.zip/);await page.getByRole('button',{name:'关闭',exact:true}).click();
- report.checks.push('assignment content is sanitized; selecting files does not upload; synthetic multipart upload + CSRF + receipt-checked submission work in place at desktop/mobile widths');
+ report.checks.push('assignment content is sanitized; dropped files wait for explicit submission; further drops are ignored during upload; synthetic multipart upload + CSRF + receipt-checked submission work at desktop/mobile widths');
  await page.getByRole('link',{name:'资料',exact:true}).click();await page.locator('.material-row').first().waitFor();await page.getByLabel('课程',{exact:true}).selectOption('lms:20290');
  await page.getByRole('button',{name:'下载本课全部资料附件'}).click();await page.getByText('已下载 1 / 1',{exact:true}).waitFor({timeout:20000});await page.getByRole('button',{name:'关闭',exact:true}).click();
  await page.getByLabel('课程',{exact:true}).selectOption('modern:21:110118');await page.getByRole('button',{name:'下载本课全部资料附件'}).click();await page.getByText('已下载 1 / 1',{exact:true}).waitFor({timeout:20000});await page.getByRole('button',{name:'关闭',exact:true}).click();
