@@ -1,0 +1,10 @@
+:root{font:14px/1.6 'Microsoft YaHei UI','PingFang SC','Segoe UI',sans-serif;color:#102a43;background:#fff;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;padding:24px}
+main{max-width:430px;margin:auto}
+h1{margin:0 0 12px;font-size:20px;font-weight:650}
+p{margin:0 0 18px;color:#526b7c;overflow-wrap:anywhere}
+button{font:inherit;border:1px solid #007b83;border-radius:7px;background:#007b83;color:#fff;padding:8px 14px;cursor:pointer}
+button:focus-visible{outline:3px solid #86c7c9;outline-offset:3px}
+button:disabled{opacity:.45;cursor:default}
+#status{margin:12px 0 0;color:#bb4141;font-size:13px}

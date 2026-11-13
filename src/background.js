@@ -4,10 +4,13 @@ import {readOperation,trustedReader} from './broker.js';
 import {nativeHref,refineEntryHref,isPlatformPage} from './site-routes.js';
 import {readSiteMode} from './site-mode.js';
 import {ReadRequests,cancellableRead} from './read-requests.js';
+import {finishExtensionUpdate,watchUpdateWindows} from './extension-update-controller.js';
 const reads=new ReadRequests();
 chrome.tabs.onRemoved.addListener(id=>reads.cancelTab(id));
 async function rules(){await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds:[1,2],addRules:[referrerRule(chrome.runtime.id),legacyReferrerRule(chrome.runtime.id)]});}
-chrome.runtime.onInstalled.addListener(()=>rules().catch(()=>{}));chrome.runtime.onStartup.addListener(()=>rules().catch(()=>{}));
+watchUpdateWindows();
+chrome.runtime.onInstalled.addListener(()=>{rules().catch(()=>{});finishExtensionUpdate().catch(()=>{});});
+chrome.runtime.onStartup.addListener(()=>{rules().catch(()=>{});finishExtensionUpdate().catch(()=>{});});
 chrome.action.onClicked.addListener(async tab=>{
  if(isPlatformPage(tab.url)&&!['zy-eclass.bit.edu.cn','lexue.bit.edu.cn'].includes(new URL(tab.url).hostname)){
   const current=await chrome.tabs.sendMessage(tab.id,{type:'REFINE_GET_VIEW'}).catch(()=>null);
@@ -19,7 +22,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
  if(sender.id!==chrome.runtime.id)return;
  if(message?.type==='REFINE_CANCEL'&&trustedReader(sender)){reads.cancel(sender,message.requestId);respond({ok:true});return;}
  if(message?.type==='REFINE_READ'&&trustedReader(sender)){
-  const run=signal=>readOperation(message.operation,message.args,{signal});
+  const run=signal=>readOperation(message.operation,message.args,{signal,sender});
   const result=message.requestId?(cancellableRead(message.operation,message.args)?reads.run(sender,message.requestId,run):Promise.reject(new Error('此操作不支持取消'))):run();
   result.then(value=>respond({ok:true,value}),e=>respond({ok:false,error:e.message||'读取失败',name:e.name}));return true;
  }

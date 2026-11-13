@@ -3,7 +3,7 @@ import {courseKey,normalizeCourse,matchesCourse,isModernTerm,termLabel,hasSpecif
 import {explain,parseCourse} from './watch/core.js';
 import {safeRecords} from './records.js';
 
-import {RemoteCatalog,RemoteSources,RemoteLms,RemoteLexue,checkPluginUpdate,checkPlatformConnection} from './remote-client.js';
+import {RemoteCatalog,RemoteSources,RemoteLms,RemoteLexue,checkPlatformConnection,startPluginUpdate} from './remote-client.js';
 import {nativeHref,referenceRoute} from './site-routes.js';
 import iconMarkup from './ui-icons.svg';
 import {courseworkUi} from './coursework-ui.js';
@@ -14,7 +14,7 @@ import {CourseworkCache} from './coursework-cache.js';
 import {connectionStatus} from './connection-status.js';
 import {formatDeadline} from './deadline-display.js';
 import {taskStatus,pendingTask} from './task-status.js';
-import {RELEASE_REPO,RELEASE_PAGE} from './update-check.js';
+import {RELEASE_REPO,UPDATE_STATUS} from './update-check.js';
 
 export function startDesk({root=document,currentRoute=()=>location.hash.slice(1)||'/today',navigate,replaceRoute,hrefForRoute=value=>value,site=false}={}){
 const $=id=>root.querySelector('#'+id),main=$('content');
@@ -302,21 +302,33 @@ async function settingsPage(epoch){
  window.addEventListener('focus',returned);document.addEventListener('visibilitychange',returned);cleanups.push(()=>{window.removeEventListener('focus',returned);document.removeEventListener('visibilitychange',returned);});
  const connections=node('section',{class:'setting-row connection-setting','aria-labelledby':'connection-heading'},node('h3',{id:'connection-heading'},'连接'),node('div',{class:'connection-tools'},node('div',{id:'connection-status',class:'connection-grid'},connectionEntries.map(({entry})=>entry)),checkConnections));
  updateConnections();
- const updateStatus=node('span',{id:'update-status',role:'status'},'当前版本 '+state.version+' · 尚未检查');
- const releaseLink=link('发布页',RELEASE_PAGE,'button-link');releaseLink.hidden=true;
- const checkUpdate=button('检查更新',async()=>{
-  checkUpdate.disabled=true;updateStatus.textContent='正在检查更新…';releaseLink.hidden=true;releaseLink.href=RELEASE_PAGE;releaseLink.textContent='发布页';
-  try{const result=await checkPluginUpdate();if(epoch!==state.epoch)return;
-   updateStatus.textContent=result.available?'发现新版本 '+result.latestVersion+'（当前 '+result.currentVersion+'）':result.ahead?'当前版本高于最新发布版 '+result.latestVersion:'未发现新版本（最新发布 '+result.latestVersion+'）';
-   if(result.available){releaseLink.href=result.downloadUrl||result.releaseUrl;releaseLink.textContent=result.downloadUrl?'下载新版':'查看新版';releaseLink.hidden=false;}
-  }catch(error){if(epoch===state.epoch){updateStatus.textContent=error.message;releaseLink.hidden=false;}}
-  finally{checkUpdate.disabled=false;}
- },'button-link');
+ const updateStatus=node('span',{id:'update-status',role:'status'},'当前版本 '+state.version);
+ const updateVersion=chrome.runtime.getManifest().version;
+ const updateProgress=node('progress',{class:'update-progress','aria-label':'插件更新进度',hidden:''});
+ const updateButton=button('一键更新',async()=>{
+  showUpdate({stage:'checking',text:'正在检查更新…',version:updateVersion});
+  try{await startPluginUpdate();}
+  catch(error){showUpdate({stage:'error',text:error.message,version:updateVersion});}
+ },'button-link',{id:'plugin-update'});
+ function showUpdate(snapshot){
+  if(epoch!==state.epoch||snapshot?.version!==updateVersion)return;
+  const busy=['checking','authorize','downloading','installing','restoring','reloading'].includes(snapshot.stage);
+  updateStatus.textContent='当前版本 '+state.version+' · '+snapshot.text;
+  updateStatus.dataset.error=String(['error','recover'].includes(snapshot.stage));
+  updateButton.disabled=busy;
+  updateButton.textContent=snapshot.stage==='recover'?'恢复更新':snapshot.stage==='authorize'?'等待授权…':busy?'更新中…':'一键更新';
+  updateProgress.hidden=!['downloading','installing','restoring'].includes(snapshot.stage);
+  if(snapshot.total){updateProgress.max=snapshot.total;updateProgress.value=snapshot.done||0;}
+  else updateProgress.removeAttribute('value');
+ }
+ const updateChanged=(changes,area)=>{if(area==='local'&&changes[UPDATE_STATUS])showUpdate(changes[UPDATE_STATUS].newValue);};
+ chrome.storage.onChanged.addListener(updateChanged);cleanups.push(()=>chrome.storage.onChanged.removeListener(updateChanged));
+ void chrome.storage.local.get(UPDATE_STATUS).then(saved=>showUpdate(saved[UPDATE_STATUS])).catch(()=>{});
  const section=node('div',{class:'settings'},setting('课程目录',`旧版 ${state.stats.legacy.toLocaleString()}　新版 ${state.stats.modern.toLocaleString()}`,[node('span',{id:'import-state',class:'muted'},`${state.stats.count.toLocaleString()} 门`),button('导入课程表',()=>input.click()),input]),
   setting('学习记录','播放进度、字幕校准与收藏',[button('导出',()=>void exportRecords()),button('导入',()=>records.click()),records]),
   connections,
   setting('时间','课表与截止时间使用北京时间',[]),
-  setting('延河焕新',updateStatus,[checkUpdate,link('项目仓库',RELEASE_REPO,'button-link'),releaseLink]),
+  setting('延河焕新',node('span',{class:'plugin-update-status'},updateStatus,updateProgress),[updateButton,link('项目仓库',RELEASE_REPO,'button-link')]),
   setting('友情链接','课程工具与资料分享',[link('Yanhekt-AutoSlides','https://github.com/bit-admin/Yanhekt-AutoSlides','button-link'),link('BITShare · 资料分享站','https://bitshare.com.cn/','button-link')]),
   node('details',{},node('summary',{},'诊断'),node('pre',{},state.diagnostics.length?state.diagnostics.join('\n'):'暂无错误')));
  setPage(epoch,heading('设置',''),section);

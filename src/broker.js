@@ -14,6 +14,7 @@ import {LmsWriter} from './lms-writer.js';
 import {attachmentUrl} from './lms-core.js';
 import {AttachmentDownloads} from './downloads.js';
 import {checkForUpdate} from './update-check.js';
+import {startExtensionUpdate,resumeExtensionUpdate} from './extension-update-controller.js';
 import {PlatformConnections,sessionError} from './platform-connections.js';
 let updateFlight;
 
@@ -35,7 +36,7 @@ async function catalogReady(){
 }
 const numeric=value=>{if(!/^\d{1,12}$/.test(String(value)))throw new Error('编号无效');};
 export function trustedReader(sender){return sender.id===chrome.runtime.id&&(sender.url?.startsWith(chrome.runtime.getURL(''))||Boolean(sender.tab&&isPlatformPage(sender.url)));}
-export async function readOperation(operation,args={},{signal}={}){
+export async function readOperation(operation,args={},{signal,sender}={}){
  signal?.throwIfAborted();
  if(operation==='publicCatalog'){
   const {method,values=[]}=args;if(!Array.isArray(values)||values.length>2)throw new Error('目录读取条件无效');
@@ -49,6 +50,8 @@ export async function readOperation(operation,args={},{signal}={}){
  }
  if(operation==='connection')return connections.check(args.source,{force:args.force===true});
  if(operation==='checkUpdate'){if(!updateFlight)updateFlight=checkForUpdate(chrome.runtime.getManifest().version).finally(()=>updateFlight=null);return updateFlight;}
+ if(operation==='startUpdate')return startExtensionUpdate(sender);
+ if(operation==='resumeUpdate')return resumeExtensionUpdate(sender);
  if(operation==='catalog'){
   const {type}=args;if(!['init','stats','get','search','related','upsert','import'].includes(type))throw new Error('不支持的目录操作');
   await catalogReady();if(type==='init')return catalogOperation('stats');

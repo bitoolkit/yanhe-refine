@@ -34,7 +34,7 @@ test('toolbar checks the actual rendered view when a native entry URL has no one
  let action,view='native';const updates=[],choices=[];
  const chrome={runtime:{id:'fixture',onInstalled:{addListener(){}},onStartup:{addListener(){}},onMessage:{addListener(){}}},action:{onClicked:{addListener:fn=>action=fn}},tabs:{onRemoved:{addListener(){}},sendMessage:async()=>({mode:view}),update:async(id,args)=>updates.push({id,...args}),create:async args=>updates.push(args)}};
  const source=readFileSync(new URL('../src/background.js',import.meta.url),'utf8').replace(/^import .*\r?\n/gm,'');
- runInNewContext(source,{chrome,URL,nativeHref,refineEntryHref,isPlatformPage,ReadRequests,cancellableRead,readSiteMode:async raw=>{choices.push(modeIntent(raw));return 'native';}});
+ runInNewContext(source,{chrome,URL,nativeHref,refineEntryHref,isPlatformPage,ReadRequests,cancellableRead,watchUpdateWindows(){},finishExtensionUpdate:async()=>{},readSiteMode:async raw=>{choices.push(modeIntent(raw));return 'native';}});
  await action({id:5,url:'https://aita.yanhekt.cn/coursedetail?course_id=102178'});
  assert.equal(modeIntent(updates[0].url),'refine');
  view='refine';await action({id:5,url:'https://www.yanhekt.cn/session/71990'});

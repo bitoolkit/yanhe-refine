@@ -1,4 +1,5 @@
 import {withReadSignal} from './shared-reads.js';
+export const startPluginUpdate=()=>request('startUpdate');
 async function request(operation,args,{signal}={}){
  signal?.throwIfAborted();const requestId=signal?crypto.randomUUID():undefined;
  const cancel=()=>{void chrome.runtime.sendMessage({type:'REFINE_CANCEL',requestId}).catch(()=>{});};signal?.addEventListener('abort',cancel,{once:true});

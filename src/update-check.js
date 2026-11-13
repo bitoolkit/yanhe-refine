@@ -1,4 +1,5 @@
 const repository='bitoolkit/yanhe-refine';
+export const UPDATE_STATUS='desk:update-status';
 export const RELEASE_REPO='https://github.com/'+repository;
 export const RELEASE_PAGE=RELEASE_REPO+'/releases/latest';
 export const RELEASE_API='https://api.github.com/repos/'+repository+'/releases/latest';

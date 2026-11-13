@@ -2,9 +2,9 @@
 
 在新版、旧版延河课堂中，一站查看课程、直播、回放、资料和待办。支持 Edge / Chrome。
 
-[下载插件 1.10.3](https://github.com/bitoolkit/yanhe-refine/releases/latest) · [下载旧版课次目录](https://github.com/bitoolkit/yanhe-refine/releases/latest/download/legacy-session-index.json) · [更新记录](CHANGELOG.md)
+[下载插件 1.10.4](https://github.com/bitoolkit/yanhe-refine/releases/latest) · [下载旧版课次目录](https://github.com/bitoolkit/yanhe-refine/releases/latest/download/legacy-session-index.json) · [更新记录](CHANGELOG.md)
 
-**1.10.3 更新。** 新增 PPT 答题待办、课件预览和题目复制。作业附件支持拖入。
+**1.10.4 更新。** 设置内一键更新，自动下载、替换并重载，支持更新失败恢复。
 
 ## 功能
 
@@ -15,7 +15,7 @@
 - 汇总新旧乐学的资料与待办，按学期筛选，作业附件支持拖入。视频下载在独立标签页进行。
 - PPT 题目全部展开，边看课件边作答，支持复制单题或全部题目。
 - 签到模式显示最新缓存画面，不自动签到；可随时切回原站。
-- 设置中可检查四个平台的连接状态、检查插件更新，访问 AutoSlides 与 BITShare。
+- 设置中可一键更新、检查四个平台连接，访问 AutoSlides 与 BITShare。
 
 ## 界面预览
 
@@ -44,7 +44,9 @@
 2. 打开 `edge://extensions` 或 `chrome://extensions`，开启「开发者模式」，选择「加载解压缩的扩展」。
 3. 选择含 `manifest.json` 的文件夹，登录[新版课堂](https://aita.yanhekt.cn/)或[旧版课堂](https://www.yanhekt.cn/)即可使用。
 
-更新时可在设置中「检查更新」，下载新版后替换原扩展文件，重新加载扩展，再刷新课堂页面。使用乐学资料与待办前，请分别登录新乐学和旧乐学。
+1.10.3 及更早版本需手动替换一次并重新加载。之后在设置点「一键更新」，首次选择插件所在文件夹并授权。后续自动复用目录，权限过期时确认授权即可。
+
+使用乐学资料与待办前，请分别登录新乐学和旧乐学。
 
 ## 课程目录
 

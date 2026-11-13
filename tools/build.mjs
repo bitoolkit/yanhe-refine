@@ -6,8 +6,8 @@ import {createHash} from 'node:crypto';
 import {deflateSync} from 'node:zlib';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),src=join(root,'src'),out=join(root,'extension');
 await mkdir(out,{recursive:true});
-for(const name of ['desk.html','desk.css','ui-icons.svg','manifest.json','content.css','courseware-viewer.html','courseware-viewer.css'])await copyFile(join(src,name),join(out,name));
-for(const [input,output,format]of [['standalone.js','desk.js','esm'],['background.js','background.js','esm'],['catalog-worker.js','catalog-worker.js','esm'],['content.js','content.js','iife'],['site-preload.js','site-preload.js','iife'],['redirect.js','redirect.js','esm'],['courseware-viewer.js','courseware-viewer.js','esm']])
+for(const name of ['desk.html','desk.css','ui-icons.svg','manifest.json','content.css','courseware-viewer.html','courseware-viewer.css','update.html','update.css'])await copyFile(join(src,name),join(out,name));
+for(const [input,output,format]of [['standalone.js','desk.js','esm'],['background.js','background.js','esm'],['catalog-worker.js','catalog-worker.js','esm'],['content.js','content.js','iife'],['site-preload.js','site-preload.js','iife'],['redirect.js','redirect.js','esm'],['courseware-viewer.js','courseware-viewer.js','esm'],['update.js','update.js','esm']])
  await build({entryPoints:[join(src,input)],outfile:join(out,output),bundle:true,format,platform:'browser',target:'chrome120',loader:{'.html':'text','.css':'text','.svg':'text'},legalComments:'linked',sourcemap:false,minify:false});
 async function copyTree(from,to){await mkdir(to,{recursive:true});for(const entry of await readdir(from,{withFileTypes:true})){const a=join(from,entry.name),b=join(to,entry.name);if(entry.isDirectory())await copyTree(a,b);else await copyFile(a,b);}}
 await copyTree(join(src,'watch'),join(out,'watch'));
