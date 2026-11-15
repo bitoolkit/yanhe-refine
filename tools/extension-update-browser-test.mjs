@@ -12,10 +12,13 @@ const built=JSON.parse(await readFile(join(root,'extension/manifest.json'),'utf8
 const suffix=built.version_name===built.version+'-dev'?'-dev':'';
 await cp(resolve(process.env.EXTENSION_PATH||join(root,'dist','yanhe-refine-'+built.version+suffix)),extension,{recursive:true});
 await mkdir(output,{recursive:true});
-await writeFile(join(extension,'build-info.json'),JSON.stringify({version:'1.10.4',catalog:null}));
+const before=JSON.parse(await readFile(join(extension,'manifest.json'),'utf8'));
+const versionParts=before.version.split('.').map(Number);
+versionParts[versionParts.length-1]++;
+const nextVersion=versionParts.join('.');
+await writeFile(join(extension,'build-info.json'),JSON.stringify({version:before.version,catalog:null}));
 await writeFile(join(extension,'bundled-catalogs.json'),JSON.stringify({schema:1,catalogs:{}}));
 await installSignedOutRecoveryFixture(extension);
-const before=JSON.parse(await readFile(join(extension,'manifest.json'),'utf8'));
 const backgroundFixture=`
 const inlineFetch=globalThis.fetch.bind(globalThis);
 globalThis.fetch=async(resource,options)=>{
@@ -54,8 +57,8 @@ async function collect(folder){
  }
 }
 await collect(extension);
-files['manifest.json']=strToU8(JSON.stringify({...before,version:'1.10.5',version_name:'1.10.5-dev'}));
-files['build-info.json']=strToU8(JSON.stringify({version:'1.10.5',catalog:null}));
+files['manifest.json']=strToU8(JSON.stringify({...before,version:nextVersion,version_name:nextVersion+'-dev'}));
+files['build-info.json']=strToU8(JSON.stringify({version:nextVersion,catalog:null}));
 files['added-by-update.txt']=strToU8('new file');
 const bytes=zipSync(files,{level:6});
 const report={mode:'isolated Edge; synthetic network and directory authorization with origin-private file writes; actual extension reload',checks:[]};
@@ -105,7 +108,7 @@ try{
   const request=route.request(),url=new URL(request.url());assert.equal(request.method(),'GET');
   const json=body=>route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
   if(url.hostname==='api.github.com'){
-   requests++;return json({tag_name:'v1.10.5',draft:false,prerelease:false,assets:[{name:'yanhe-refine-1.10.5.zip',state:'uploaded',browser_download_url:'https://github.com/bitoolkit/yanhe-refine/releases/download/v1.10.5/yanhe-refine-1.10.5.zip'}]});
+   requests++;return json({tag_name:'v'+nextVersion,draft:false,prerelease:false,assets:[{name:'yanhe-refine-'+nextVersion+'.zip',state:'uploaded',browser_download_url:'https://github.com/bitoolkit/yanhe-refine/releases/download/v'+nextVersion+'/yanhe-refine-'+nextVersion+'.zip'}]});
   }
   if(url.hostname==='github.com')return downloadMode==='offline'?route.abort():route.fulfill({body:Buffer.from(bytes),contentType:'application/zip'});
   if(url.hostname==='aita.yanhekt.cn'&&url.pathname.endsWith('infosimple'))return json({code:200,params:{id:7,tenant_id:21,account:'fixture'}});
@@ -151,14 +154,14 @@ try{
  const written=await worker.evaluate(async()=>{
   const root=await navigator.storage.getDirectory(),directory=await root.getDirectoryHandle('installation');
   return JSON.parse(await (await (await directory.getFileHandle('manifest.json')).getFile()).text()).version;
- });assert.equal(written,'1.10.5');
+ });assert.equal(written,nextVersion);
  report.checks.push('with permission already granted, writing, rollback and retry all run from the settings button without any extra window or tab');
  for(const [name,file] of Object.entries(files)){
   const path=join(extension,name);assert.ok(path.startsWith(extension+'\\'));await mkdir(dirname(path),{recursive:true});await writeFile(path,file);
  }
  const newWorker=context.waitForEvent('serviceworker');
  await worker.evaluate(()=>inlineNativeReload()).catch(()=>{});worker=await newWorker;
- await waitStatus('已更新到 1.10.5');assert.equal(page.url(),url);assert.equal(context.pages().length,tabCount);
+ await waitStatus('已更新到 '+nextVersion);assert.equal(page.url(),url);assert.equal(context.pages().length,tabCount);
  assert.deepEqual(await local('desk:favorites'),['modern:21:123']);assert.equal((await local('progress:123:4')).time,321);
  await page.setViewportSize({width:375,height:900});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
