@@ -157,7 +157,12 @@ try{
  report.checks.push('mobile pane switching and retrying a failed preview preserve entered answers');
  await page.getByLabel('1 题选项 1',{exact:true}).focus();
  await page.keyboard.press('Escape');
+ // Native dialog close events arrive asynchronously. Wait for the previous close request to settle before another Escape.
+ await page.locator('.close-confirmation').evaluate(dialog=>{
+  window.fixtureConfirmationClosed=new Promise(resolve=>dialog.addEventListener('close',()=>resolve(),{once:true}));
+ });
  await page.getByRole('button',{name:'继续填写',exact:true}).click();
+ await page.evaluate(()=>window.fixtureConfirmationClosed);
  assert.equal(await page.getByLabel('1 题选项 1',{exact:true}).isChecked(),true);
  await page.getByLabel('1 题选项 1',{exact:true}).focus();
  await page.keyboard.press('Escape');
@@ -220,5 +225,5 @@ try{
  await page.getByRole('button',{name:'已答课件.pdf · PPT 答题',exact:true}).waitFor();
  report.checks.push('submitted filtering, saved answers and exhausted attempts survive reload without an automatic write');
  assert.deepEqual(errors,[]);report.ok=true;
-}catch(error){report.ok=false;report.error=String(error.stack);process.exitCode=1;if(page){report.visible=await page.locator('body').innerText().catch(()=>null);await page.screenshot({path:join(output,'ppt-quiz-failed.png'),fullPage:true}).catch(()=>{});}}
+}catch(error){report.ok=false;report.error=String(error.stack);process.exitCode=1;if(page){report.visible=await page.locator('#resources-dialog').innerText().catch(()=>null);report.dialogs=await page.locator('dialog').evaluateAll(dialogs=>dialogs.map(dialog=>({id:dialog.id,open:dialog.open,text:dialog.innerText}))).catch(()=>null);await page.screenshot({path:join(output,'ppt-quiz-failed.png'),fullPage:true}).catch(()=>{});}}
 finally{await context?.close();if(dirname(scratch)===resolve(tmpdir())&&basename(scratch).startsWith('yanhe-ppt-quiz-'))await rm(scratch,{recursive:true,force:true});await writeFile(join(output,'ppt-quiz-browser-report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));}

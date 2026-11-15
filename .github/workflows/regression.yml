@@ -43,3 +43,12 @@ jobs:
             node "tools/$script.mjs"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Save failed browser checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure
+          path: |
+            test-results/*report.json
+            test-results/*failed.png
+          retention-days: 7
