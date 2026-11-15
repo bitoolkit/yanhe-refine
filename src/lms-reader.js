@@ -2,10 +2,11 @@ import {lmsCourses,homeworkRows,materialRows,resourceRows,homeworkDetail,submiss
 import {quizActivity,quizRows,quizSubjects,quizVersion,quizPreviewUrl} from './ppt-quiz.js';
 import {readPool} from './read-pool.js';
 import {isTrue} from './catalog-core.js';
+import {TaskDetailsCache} from './task-details-cache.js';
 export const LMS_ORIGIN='https://zy-eclass.bit.edu.cn';
 export function numeric(value){if(!/^\d{1,12}$/.test(String(value)))throw new Error('编号无效');return String(value);}
 export class LmsReader {
- constructor(fetcher=globalThis.fetch.bind(globalThis)){this.fetcher=fetcher;this.owned=null;this.courseTerms=new Map();this.activities=new Map();this.termCache=null;this.termFlight=null;}
+ constructor(fetcher=globalThis.fetch.bind(globalThis)){this.fetcher=fetcher;this.owned=null;this.courseTerms=new Map();this.activities=new Map();this.termCache=null;this.termFlight=null;this.taskDetails=new TaskDetailsCache();}
  async termCatalog(yearIds=[],signal){
   if(this.termCache&&Date.now()-this.termCache.at<300000)return this.termCache.data;
   if(this.termFlight)return this.termFlight;
@@ -52,7 +53,7 @@ export class LmsReader {
   const userId=await this.userId(courseId,signal),body=await this.get(`/api/activities/${id}/students/${userId}/submission_list`,12000,signal);
   return {rows:submissionRows(body),groupName:'',inGroup:true};
  }
- async pptHomeworks(courseId,signal){
+ async pptHomeworks(courseId,signal,{force=false}={}){
   await this.own(courseId,false,signal);
   const body=await this.get(`/api/course/${courseId}/courseware-activities`,12000,signal);
   const rows=Array.isArray(body)?body:body.learning_activities||body.courseware_activities||body.activities;
@@ -60,15 +61,23 @@ export class LmsReader {
   const entries=rows.filter(entry=>published(entry)&&quizActivity(entry));
   const results=await readPool(entries,2,async entry=>{
    if(entry.course_id!=null&&String(entry.course_id)!==String(courseId))throw new Error('课件所属课程不一致');
-   const quizzes=await this.get(`/api/courseware-quiz/activity/${numeric(entry.id)}/quizzes`,12000,signal);
+   const key=String(courseId)+':'+numeric(entry.id);
+   return this.taskDetails.read(key,{entry,term:this.courseTerms.get(String(courseId))},async inner=>{
+   const quizzes=await this.get(`/api/courseware-quiz/activity/${entry.id}/quizzes`,12000,inner);
    if(!Array.isArray(quizzes))throw new Error('PPT 答题列表格式异常');
    if(!quizzes.some(quiz=>Number(quiz.subjects_count)>0))return [];
-   const references=await this.get(`/api/activities/${entry.id}/upload_references`,12000,signal);
+   const references=await this.get(`/api/activities/${entry.id}/upload_references`,12000,inner);
    return quizRows(quizzes,references,entry,courseId,this.courseTerms.get(String(courseId)));
+   },{signal,force});
   },{signal});
-  return results.flatMap((result,index)=>result.ok?result.value:[{id:`ppt:${entries[index].id}:unavailable`,type:'ppt-quiz-error',
+  return results.flatMap((result,index)=>{
+   if(result.ok)return result.value;
+   const saved=this.taskDetails.peek(String(courseId)+':'+entries[index].id);
+   if(saved?.length)return saved.map(row=>({...row,state:'unknown',detailError:true}));
+   return [{id:`ppt:${entries[index].id}:unavailable`,type:'ppt-quiz-error',
    courseId:String(courseId),activityId:String(entries[index].id),title:entries[index].title+' · PPT 答题未同步',state:'unknown',detailError:true,
-   deadline:null,url:`${LMS_ORIGIN}/course/${courseId}/learning-activity#/${entries[index].id}`}]);
+   deadline:null,url:`${LMS_ORIGIN}/course/${courseId}/learning-activity#/${entries[index].id}`}];
+  });
  }
  async pptQuizActivity(courseId,id,quizId,signal){
   numeric(quizId);const entry=await this.activity(courseId,id,signal);
@@ -90,12 +99,12 @@ export class LmsReader {
  }
  async pptQuiz(courseId,id,quizId,signal){
   const {row,activity}=await this.pptQuizActivity(courseId,id,quizId,signal);
-  const [questions,history]=await Promise.all([this.get(`/api/courseware-quiz/quiz/${quizId}/subjects`,12000,signal),this.get(`/api/courseware-quiz/quiz/${quizId}/my-submission`,12000,signal)]);
+  const [questions,history,userId]=await Promise.all([this.get(`/api/courseware-quiz/quiz/${quizId}/subjects`,12000,signal),this.get(`/api/courseware-quiz/quiz/${quizId}/my-submission`,12000,signal),this.userId(courseId,signal)]);
   if(!Object.hasOwn(history,'submission')||history.submission&&String(history.submission.quiz_id)!==String(quizId))throw new Error('未能确认本人答题记录');
   const subjects=quizSubjects(questions),used=Number(history.submission?.submitted_times||0),limit=Number(history.submit_times??1);
   if(!Number.isInteger(used)||used<0||!Number.isInteger(limit)||limit<0)throw new Error('未能确认答题次数');
   const supported=subjects.every(subject=>subject.supported),open=isTrue(activity.is_in_progress)&&!row.closed;
-  return {...row,subjects,version:quizVersion(subjects),used,limit,state:used>0?'submitted':'pending',
+  return {...row,userId,subjects,version:quizVersion(subjects),used,limit,state:used>0?'submitted':'pending',
    answers:history.submission?.submission_data?.subjects_answers||[],submissionId:history.submission?.id?String(history.submission.id):null,
    canSubmit:supported&&open&&used<limit,submitReason:!supported?'部分题型请在原站作答':!open?'当前不在答题时间内':used>=limit?'已达到答题次数上限':''};
  }
@@ -106,7 +115,7 @@ export class LmsReader {
   }
   if(kind==='courses'){
    const body=await this.get('/api/my-courses',12000,signal);if(!Array.isArray(body.courses||body.data?.courses))throw new Error('请登录新乐学');
-   if(force)this.termCache=null;
+   if(force){this.termCache=null;this.taskDetails.clear();}
    let rows=lmsCourses(body);if(rows.some(row=>!row.term)){
     const yearIds=(body.courses||body.data.courses).map(row=>String(row.academic_year?.id??row.academic_year_id??(typeof row.academic_year!=='object'?row.academic_year:'')));
     rows=lmsCourses(body,await this.termCatalog(yearIds,signal));

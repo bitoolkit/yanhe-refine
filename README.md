@@ -2,9 +2,9 @@
 
 在新版、旧版延河课堂中，一站查看课程、直播、回放、资料和待办。支持 Edge / Chrome。
 
-[下载插件 1.10.4](https://github.com/bitoolkit/yanhe-refine/releases/latest) · [下载旧版课次目录](https://github.com/bitoolkit/yanhe-refine/releases/latest/download/legacy-session-index.json) · [更新记录](CHANGELOG.md)
+[下载插件 1.10.5](https://github.com/bitoolkit/yanhe-refine/releases/latest) · [下载旧版课次目录](https://github.com/bitoolkit/yanhe-refine/releases/latest/download/legacy-session-index.json) · [更新记录](CHANGELOG.md)
 
-**1.10.4 更新。** 设置内一键更新，自动下载、替换并重载，支持更新失败恢复。
+**1.10.5 更新。** 待办读取提速，新增日历导出和 PPT 草稿恢复，改善作业提交与更新恢复。
 
 ## 功能
 
@@ -13,9 +13,9 @@
 - 自动识别新旧站同堂直播，右上角查看当前来源并切换。
 - 倍速、字幕、音量、网页全屏和屏幕全屏；侧栏、课次栏与字幕表可收起。
 - 汇总新旧乐学的资料与待办，按学期筛选，作业附件支持拖入。视频下载在独立标签页进行。
-- PPT 题目全部展开，边看课件边作答，支持复制单题或全部题目。
+- PPT 题目全部展开，边看课件边作答，自动保存草稿，支持复制单题或全部题目。
 - 签到模式显示最新缓存画面，不自动签到；可随时切回原站。
-- 设置中可一键更新、检查四个平台连接，访问 AutoSlides 与 BITShare。
+- 设置中可一键更新、导出待办日历、检查四个平台连接，访问 AutoSlides 与 BITShare。
 
 ## 界面预览
 

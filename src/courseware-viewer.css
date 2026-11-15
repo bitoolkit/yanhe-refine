@@ -9,6 +9,7 @@ button{cursor:pointer;padding:4px 10px}button:disabled{opacity:.4;cursor:default
 .document-page{position:relative;background:#fff;margin:12px auto 0;box-shadow:0 1px 5px #102a4320;overflow:hidden}
 .document-page::before{content:attr(aria-label);position:absolute;top:12px;left:14px;font-size:12px;color:#627d98}.document-page:has(canvas)::before{display:none}
 .document-page canvas{display:block;width:100%;height:100%}
+.page-retry{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%)}
 #notice{position:absolute;inset:47px 0 0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;padding:24px;text-align:center;background:#e8edf1}
 #notice[hidden],button[hidden]{display:none}#message{margin:0;color:#627d98}
 @media(max-width:420px){.document-toolbar{gap:5px;padding:8px}.document-toolbar select{max-width:104px}.document-toolbar button{padding:4px 8px}}

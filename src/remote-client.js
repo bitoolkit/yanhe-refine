@@ -1,5 +1,6 @@
 import {withReadSignal} from './shared-reads.js';
 export const startPluginUpdate=()=>request('startUpdate');
+export const readPluginUpdateStatus=()=>request('updateStatus');
 async function request(operation,args,{signal}={}){
  signal?.throwIfAborted();const requestId=signal?crypto.randomUUID():undefined;
  const cancel=()=>{void chrome.runtime.sendMessage({type:'REFINE_CANCEL',requestId}).catch(()=>{});};signal?.addEventListener('abort',cancel,{once:true});
@@ -24,7 +25,7 @@ export class RemoteSources{
 }
 export class RemoteLms{
  courses=force=>request('lms',{method:'courses',args:[Boolean(force)]});
- homeworks=(id,options)=>request('lms',{method:'homeworks',args:[id]},options);
+ homeworks=(id,options)=>request('lms',{method:'homeworks',args:options?.force?[id,{force:true}]:[id]},options);
  materials=(id,options)=>request('lms',{method:'materials',args:[id]},options);
  resources=(courseId,id)=>request('lms',{method:'resources',args:[courseId,id]});
  task=(courseId,id)=>request('lms',{method:'task',args:[courseId,id]});
@@ -36,7 +37,7 @@ export class RemoteLms{
 }
 export class RemoteLexue{
  courses=force=>request('lexue',{method:'courses',args:[Boolean(force)]});
- homeworks=(id,options)=>request('lexue',{method:'homeworks',args:[id]},options);
+ homeworks=(id,options)=>request('lexue',{method:'homeworks',args:options?.force?[id,{force:true}]:[id]},options);
  materials=(id,options)=>request('lexue',{method:'materials',args:[id]},options);
  resources=(courseId,id)=>request('lexue',{method:'resources',args:[courseId,id]});
  material=(courseId,id)=>request('lexue',{method:'material',args:[courseId,id]});

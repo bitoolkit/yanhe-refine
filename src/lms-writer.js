@@ -17,7 +17,7 @@ export const commentHtml=text=>String(text).trim().split('\n').map(line=>`<p>${l
 
 // Explicit operations only: no caller-provided URLs, methods, user IDs or server payloads.
 export class LmsWriter{
- constructor(reader,{cookies=globalThis.chrome?.cookies,session=globalThis.chrome?.storage?.session}={}){this.reader=reader;this.cookies=cookies;this.session=session;this.uploads=new Map();this.flights=new Map();}
+ constructor(reader,{cookies=globalThis.chrome?.cookies,session=globalThis.chrome?.storage?.session,journal=globalThis.chrome?.storage?.local||session}={}){this.reader=reader;this.cookies=cookies;this.session=session;this.journal=journal;this.uploads=new Map();this.flights=new Map();}
  async headers(json=true){const c=await this.cookies?.get({url:LMS_ORIGIN,name:'XSRF-TOKEN'});return {Accept:'application/json',...(json?{'Content-Type':'application/json'}:{}),...(c?.value?{'X-XSRF-TOKEN':decodeURIComponent(c.value)}:{})};}
  async post(path,body){
   const response=await this.reader.response(path,{method:'POST',headers:await this.headers(),body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
@@ -86,27 +86,71 @@ export class LmsWriter{
   if(typeof comment!=='string'||comment.length>100000||!Array.isArray(uploads)||uploads.length>30||new Set(uploads).size!==uploads.length)throw new Error('提交内容无效');
   if(!comment.trim()&&!uploads.length)throw new Error('请填写内容或选择附件');
   const userId=await this.reader.userId(courseId),key=`desk:submission:${userId}:${courseId}:${id}:${requestId}`;
-  if(this.flights.has(key))return this.flights.get(key);
-  const flight=this.submitOnce(courseId,id,{comment,uploads,userId},key);this.flights.set(key,flight);
-  try{return await flight;}finally{this.flights.delete(key);}
+  const scope=key.slice(0,key.lastIndexOf(':'));
+  const active=this.flights.get(scope);
+  if(active){
+   if(active.key===key)return active.promise;
+   throw new Error('这份作业正在提交，请稍候');
+  }
+  const promise=this.submitOnce(courseId,id,{comment,uploads,userId},key,scope);
+  this.flights.set(scope,{key,promise});
+  try{return await promise;}finally{this.flights.delete(scope);}
  }
- async submitOnce(courseId,id,{comment,uploads,userId},key){
-  const saved=(await this.session?.get(key))?.[key];if(saved)return saved;
-  const before=await this.preflight(courseId,id);if(await this.reader.userId(courseId)!==userId)throw new Error('新乐学账号已切换，请刷新后重试');
-  for(const value of uploads){const uploadId=numeric(value),owned=this.uploads.get(uploadId)||(await this.session?.get('desk:upload:'+uploadId))?.['desk:upload:'+uploadId];if(!owned||owned.courseId!==String(courseId)||owned.activityId!==String(id)||owned.userId!==userId)throw new Error('附件状态已失效，请重新选择文件');}
+ async confirmSubmission(detail,pending,pendingKey){
+  const matches=detail.submissions.filter(row=>!row.draft&&(pending.receipt
+   ?row.id===pending.receipt
+   :!pending.previous.includes(row.id)&&row.attachments.map(file=>file.id).sort().join(',')===pending.uploads.join(',')&&String(row.comment||'').trim()===pending.comment));
+  if(matches.length!==1)return null;
+  const confirmed={status:'submitted',id:matches[0].id};
+  await this.journal?.set({[pending.key]:confirmed});
+  for(const uploadId of pending.uploads){
+   this.uploads.delete(uploadId);
+   await this.session?.remove('desk:upload:'+uploadId);
+  }
+  await this.journal?.remove(pendingKey);
+  return confirmed;
+ }
+ async submitOnce(courseId,id,{comment,uploads,userId},key,scope){
+  const saved=(await this.journal?.get(key))?.[key];
+  if(saved?.status==='submitted')return saved;
   const uncertain={status:'uncertain',message:'提交结果待核对，请刷新提交记录，勿重复提交'};
+  const pendingKey=scope+':pending',html=comment.trim()?commentHtml(comment):'',wanted=uploads.map(String).sort();
+  const pending=(await this.journal?.get(pendingKey))?.[pendingKey];
+  await this.reader.own(courseId,true);
+  const before=await this.reader.read({kind:'task',courseId,id});
+  if(await this.reader.userId(courseId)!==userId)throw new Error('新乐学账号已切换，请刷新后重试');
+  if(pending){
+   const confirmed=await this.confirmSubmission(before,pending,pendingKey);
+   if(!confirmed)return uncertain;
+   if(pending.comment!==html||pending.uploads.join(',')!==wanted.join(','))throw new Error('上次提交已确认，请重新打开作业后核对本次内容');
+   await this.journal?.set({[key]:confirmed});
+   return confirmed;
+  }
+  if(saved)return saved;
+  // Older versions stored only request-scoped uncertainty. Preserve that protection when the editor creates a new request ID.
+  const receipts={...await this.session?.get(null),...await this.journal?.get(null)};
+  if(Object.entries(receipts).some(([name,value])=>name.startsWith(scope+':')&&value?.status==='uncertain'))return uncertain;
+  if(!before.canSubmit)throw new Error(before.submitReason||'当前作业不可提交');
+  for(const value of uploads){
+   const uploadId=numeric(value),owned=this.uploads.get(uploadId)||(await this.session?.get('desk:upload:'+uploadId))?.['desk:upload:'+uploadId];
+   if(!owned||owned.courseId!==String(courseId)||owned.activityId!==String(id)||owned.userId!==userId)throw new Error('附件状态已失效，请重新选择文件');
+  }
+  const journal={key,previous:before.submissions.map(row=>row.id),comment:html,uploads:wanted};
   // Persist before the write so a worker restart cannot silently replay a POST.
-  await this.session?.set({[key]:uncertain});
+  await this.journal?.set({[key]:uncertain,[pendingKey]:journal});
   let result={};
-  try{result=await this.post(`/api/course/activities/${id}/submissions`,{comment:comment.trim()?commentHtml(comment):'',uploads:uploads.map(Number),slides:[],is_draft:false,mode:'normal',other_resources:[],uploads_in_rich_text:[]});}
-  catch(e){if(e.status>=400&&e.status<500&&e.status!==408){await this.session?.remove(key);throw e;}}
+  try{result=await this.post(`/api/course/activities/${id}/submissions`,{comment:html,uploads:uploads.map(Number),slides:[],is_draft:false,mode:'normal',other_resources:[],uploads_in_rich_text:[]});}
+  catch(error){
+   if(error.status>=400&&error.status<500&&error.status!==408){
+    await this.journal?.remove(pendingKey);await this.journal?.remove(key);throw error;
+   }
+  }
   const receipt=result.submission?.id||result.submission_id||result.id;
   try{
+   if(/^\d{1,12}$/.test(String(receipt||''))){journal.receipt=String(receipt);await this.journal?.set({[pendingKey]:journal});}
+   if(await this.reader.userId(courseId)!==userId)return uncertain;
    const detail=await this.reader.read({kind:'task',courseId,id});
-   const previous=new Set(before.submissions.map(r=>r.id)),wanted=uploads.map(String).sort().join(','),html=comment.trim()?commentHtml(comment):'';
-   const matches=detail.submissions.filter(r=>!r.draft&&(receipt?r.id===String(receipt):!previous.has(r.id)&&r.attachments.map(f=>f.id).sort().join(',')===wanted&&String(r.comment||'').trim()===html));
-   if(matches.length!==1)return uncertain;
-   const confirmed={status:'submitted',id:matches[0].id};await this.session?.set({[key]:confirmed});for(const value of uploads){this.uploads.delete(String(value));await this.session?.remove('desk:upload:'+value);}return confirmed;
+   return await this.confirmSubmission(detail,journal,pendingKey)||uncertain;
   }catch{return uncertain;}
  }
 }

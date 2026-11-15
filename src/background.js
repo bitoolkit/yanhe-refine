@@ -4,13 +4,13 @@ import {readOperation,trustedReader} from './broker.js';
 import {nativeHref,refineEntryHref,isPlatformPage} from './site-routes.js';
 import {readSiteMode} from './site-mode.js';
 import {ReadRequests,cancellableRead} from './read-requests.js';
-import {finishExtensionUpdate,watchUpdateWindows} from './extension-update-controller.js';
+import {initializeExtensionUpdate,watchUpdateWindows} from './extension-update-controller.js';
 const reads=new ReadRequests();
 chrome.tabs.onRemoved.addListener(id=>reads.cancelTab(id));
 async function rules(){await chrome.declarativeNetRequest.updateSessionRules({removeRuleIds:[1,2],addRules:[referrerRule(chrome.runtime.id),legacyReferrerRule(chrome.runtime.id)]});}
 watchUpdateWindows();
-chrome.runtime.onInstalled.addListener(()=>{rules().catch(()=>{});finishExtensionUpdate().catch(()=>{});});
-chrome.runtime.onStartup.addListener(()=>{rules().catch(()=>{});finishExtensionUpdate().catch(()=>{});});
+chrome.runtime.onInstalled.addListener(()=>{rules().catch(()=>{});initializeExtensionUpdate().catch(()=>{});});
+chrome.runtime.onStartup.addListener(()=>{rules().catch(()=>{});initializeExtensionUpdate().catch(()=>{});});
 chrome.action.onClicked.addListener(async tab=>{
  if(isPlatformPage(tab.url)&&!['zy-eclass.bit.edu.cn','lexue.bit.edu.cn'].includes(new URL(tab.url).hostname)){
   const current=await chrome.tabs.sendMessage(tab.id,{type:'REFINE_GET_VIEW'}).catch(()=>null);
@@ -18,6 +18,7 @@ chrome.action.onClicked.addListener(async tab=>{
   const target=mode==='refine'?nativeHref(tab.url,{remember:true}):refineEntryHref(tab.url);await readSiteMode(target);await chrome.tabs.update(tab.id,{url:target});
  }else{const target=refineEntryHref('https://aita.yanhekt.cn/portal/#/');await readSiteMode(target);await chrome.tabs.create({url:target});}
 });
+void initializeExtensionUpdate().catch(()=>{});
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
  if(sender.id!==chrome.runtime.id)return;
  if(message?.type==='REFINE_CANCEL'&&trustedReader(sender)){reads.cancel(sender,message.requestId);respond({ok:true});return;}

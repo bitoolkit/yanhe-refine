@@ -39,10 +39,10 @@ function questionText(subject,index){
  ].join('\n');
 }
 
-export function quizForm({row,data,node,button,link,deadline,submit,refresh,setBusy,isCurrent,onSubmitted,heading}){
+export function quizForm({row,data,draft,node,button,link,deadline,submit,refresh,setBusy,isCurrent,onSubmitted,heading,onEditor}){
  const form=node('form',{class:'ppt-quiz-form'}),status=node('p',{class:'submission-notice',role:'status'}),inputs=[];
  const copyFeedback=node('span',{class:'ppt-copy-feedback',role:'status','aria-live':'polite'});
- let inFlight=false,uncertain=false,editing=data.used===0,requestId=crypto.randomUUID();
+ let inFlight=false,uncertain=false,editing=data.used===0||Boolean(draft.answers),requestId=crypto.randomUUID(),draftTimer;
  async function writeClipboard(value){
   try{
    if(navigator.clipboard?.writeText){
@@ -120,6 +120,24 @@ export function quizForm({row,data,node,button,link,deadline,submit,refresh,setB
   return {subject_id:Number(subject.id),type:subject.type,answer_option_ids:choice?controls.filter(input=>input.checked).map(input=>Number(input.value)):[],
    answers:choice?[]:controls.map((input,sort)=>({sort,content:input.value}))};
  });}
+ let initialAnswers=JSON.stringify(answers());
+ const dirty=()=>editing&&JSON.stringify(answers())!==initialAnswers;
+ async function saveDraft(){
+  clearTimeout(draftTimer);
+  if(dirty())await draft.save(answers());else await draft.clear();
+ }
+ onEditor({dirty,save:saveDraft,dispose:saveDraft,kind:'quiz'});
+ if(draft.answers&&data.canSubmit){
+  const restored=new Map(draft.answers.filter(answer=>answer&&typeof answer==='object').map(answer=>[String(answer.subject_id),answer]));
+  for(const {subject,controls} of inputs){
+   const answer=restored.get(subject.id);if(!answer)continue;
+   for(const [index,input] of controls.entries()){
+    if(input.matches('input'))input.checked=Array.isArray(answer.answer_option_ids)&&answer.answer_option_ids.some(id=>String(id)===input.value);
+    else input.value=String(answer.answers?.find(value=>value.sort===index)?.content||'').slice(0,100000);
+   }
+  }
+  status.textContent='已恢复本机保存的答案草稿';
+ }
  function sync(){
   const locked=inFlight||!data.canSubmit||!editing||uncertain;
   for(const {controls} of inputs)for(const input of controls)input.disabled=locked;
@@ -128,13 +146,18 @@ export function quizForm({row,data,node,button,link,deadline,submit,refresh,setB
   send.hidden=!data.canSubmit||!editing||uncertain;send.disabled=inFlight||completed!==data.subjects.length;send.textContent=inFlight?'正在提交…':'提交全部答案';
   retry.hidden=!data.canSubmit||editing||uncertain;reload.disabled=inFlight;
  }
- form.addEventListener('input',sync);
+ form.addEventListener('input',()=>{
+  sync();clearTimeout(draftTimer);
+  draftTimer=setTimeout(()=>void saveDraft().catch(error=>{if(isCurrent())status.textContent=error.message;}),300);
+ });
  form.addEventListener('submit',async event=>{
   event.preventDefault();if(inFlight||send.disabled||send.hidden||!isCurrent())return;
   inFlight=true;setBusy(true);sync();status.textContent='正在核对题目与答题次数…';
   try{
    const result=await submit({requestId,version:data.version,answers:answers()});if(!isCurrent())return;
    if(result.status==='submitted'){
+    clearTimeout(draftTimer);initialAnswers=JSON.stringify(answers());
+    await draft.clear().catch(()=>{});
     status.textContent='答题已提交';data.used++;editing=false;data.canSubmit=data.used<data.limit;
     stateLabel.textContent='已作答';attemptLabel.textContent=`已提交 ${data.used} / ${data.limit} 次`;onSubmitted(row);
    }

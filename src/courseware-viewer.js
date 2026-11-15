@@ -29,7 +29,7 @@ function updateCurrentPage(){
  if(nearest){currentPage=nearest.number;updateNavigation();}
 }
 async function renderPage(entry){
- if(!pdf||entry.canvas||entry.loading||!visible.has(entry))return;
+ if(!pdf||entry.canvas||entry.loading||entry.failed||!visible.has(entry))return;
  const loadedDocument=pdf,version=entry.revision;entry.loading=true;
  try{
   const page=await loadedDocument.getPage(entry.number);
@@ -45,11 +45,16 @@ async function renderPage(entry){
   if(version===entry.revision&&entry.canvas===canvas)canvas.dataset.rendered='true';
  }catch(error){
   if(version===entry.revision&&error.name!=='RenderingCancelledException'){
-   releasePage(entry);entry.element.setAttribute('aria-label',`第 ${entry.number} 页暂未加载，请重新加载课件`);
+   releasePage(entry);entry.failed=true;
+   entry.element.setAttribute('aria-label',`第 ${entry.number} 页暂未加载，请重试`);
+   const retry=document.createElement('button');retry.type='button';retry.className='page-retry';retry.textContent='重新加载此页';
+   retry.setAttribute('aria-label',`重新加载此页（第 ${entry.number} 页）`);
+   retry.onclick=()=>{retry.remove();entry.failed=false;entry.element.setAttribute('aria-label',`第 ${entry.number} 页`);void renderPage(entry);};
+   entry.element.append(retry);
   }
  }finally{
   entry.loading=false;
-  if(version!==entry.revision&&visible.has(entry)&&pdf)void renderPage(entry);
+  if(version!==entry.revision&&!entry.failed&&visible.has(entry)&&pdf)void renderPage(entry);
  }
 }
 function resizePages(){

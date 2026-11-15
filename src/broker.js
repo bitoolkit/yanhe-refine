@@ -14,7 +14,7 @@ import {LmsWriter} from './lms-writer.js';
 import {attachmentUrl} from './lms-core.js';
 import {AttachmentDownloads} from './downloads.js';
 import {checkForUpdate} from './update-check.js';
-import {startExtensionUpdate,resumeExtensionUpdate} from './extension-update-controller.js';
+import {startExtensionUpdate,resumeExtensionUpdate,extensionUpdateStatus} from './extension-update-controller.js';
 import {PlatformConnections,sessionError} from './platform-connections.js';
 let updateFlight;
 
@@ -51,6 +51,7 @@ export async function readOperation(operation,args={},{signal,sender}={}){
  if(operation==='connection')return connections.check(args.source,{force:args.force===true});
  if(operation==='checkUpdate'){if(!updateFlight)updateFlight=checkForUpdate(chrome.runtime.getManifest().version).finally(()=>updateFlight=null);return updateFlight;}
  if(operation==='startUpdate')return startExtensionUpdate(sender);
+ if(operation==='updateStatus')return extensionUpdateStatus();
  if(operation==='resumeUpdate')return resumeExtensionUpdate(sender);
  if(operation==='catalog'){
   const {type}=args;if(!['init','stats','get','search','related','upsert','import'].includes(type))throw new Error('不支持的目录操作');
@@ -73,8 +74,8 @@ export async function readOperation(operation,args={},{signal,sender}={}){
  }
  if(operation==='detail'){if(!['modern','legacy'].includes(args.args?.[0]))throw new Error('平台无效');numeric(args.args[1]);return sources.detail(...args.args);}
  if(operation==='resolve'){if(String(args.args?.[0]).length>4096)throw new Error('地址过长');return sources.resolve(...args.args);}
- if(operation==='lms'){if(!['courses','homeworks','materials','resources','task','quiz','quizPreview'].includes(args.method)||!Array.isArray(args.args))throw new Error('不支持的新乐学读取');if(args.method!=='courses')numeric(args.args[0]);if(['resources','task','quiz','quizPreview'].includes(args.method))numeric(args.args[1]);if(['quiz','quizPreview'].includes(args.method))numeric(args.args[2]);if(['homeworks','materials'].includes(args.method))return lms[args.method](args.args[0],{signal});return args.method==='courses'?teachingCourses(lms,'lms',args.args):lms[args.method](...args.args);}
- if(operation==='lexue'){if(!['courses','homeworks','materials','resources','material','task'].includes(args.method)||!Array.isArray(args.args))throw new Error('不支持的旧乐学读取');if(args.method!=='courses')numeric(args.args[0]);if(['resources','material','task'].includes(args.method))numeric(args.args[1]);if(['homeworks','materials'].includes(args.method))return lexue[args.method](args.args[0],{signal});return args.method==='courses'?teachingCourses(lexue,'lexue',args.args):lexue[args.method](...args.args);}
+ if(operation==='lms'){if(!['courses','homeworks','materials','resources','task','quiz','quizPreview'].includes(args.method)||!Array.isArray(args.args))throw new Error('不支持的新乐学读取');if(args.method!=='courses')numeric(args.args[0]);if(['resources','task','quiz','quizPreview'].includes(args.method))numeric(args.args[1]);if(['quiz','quizPreview'].includes(args.method))numeric(args.args[2]);if(['homeworks','materials'].includes(args.method))return lms[args.method](args.args[0],{signal,force:args.args[1]?.force===true});return args.method==='courses'?teachingCourses(lms,'lms',args.args):lms[args.method](...args.args);}
+ if(operation==='lexue'){if(!['courses','homeworks','materials','resources','material','task'].includes(args.method)||!Array.isArray(args.args))throw new Error('不支持的旧乐学读取');if(args.method!=='courses')numeric(args.args[0]);if(['resources','material','task'].includes(args.method))numeric(args.args[1]);if(['homeworks','materials'].includes(args.method))return lexue[args.method](args.args[0],{signal,force:args.args[1]?.force===true});return args.method==='courses'?teachingCourses(lexue,'lexue',args.args):lexue[args.method](...args.args);}
  if(operation==='lmsWrite'){if(!['upload','submit','submitQuiz'].includes(args.method)||!Array.isArray(args.args))throw new Error('不支持的作业操作');numeric(args.args[0]);numeric(args.args[1]);return writer[args.method](...args.args);}
  if(operation==='download'){
   numeric(args.courseId);numeric(args.id);

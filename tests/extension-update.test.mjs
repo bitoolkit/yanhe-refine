@@ -78,6 +78,15 @@ test('download uses only the canonical public asset and omits browser credential
  await assert.rejects(downloadUpdate(update,{fetcher:async()=>new Response('',{status:403})}),/下载失败/);
 });
 
+test('stalled update headers and body fail within the idle timeout',async()=>{
+ const update={latestVersion:'1.10.5',downloadUrl:'https://github.com/bitoolkit/yanhe-refine/releases/download/v1.10.5/yanhe-refine-1.10.5.zip'};
+ await assert.rejects(downloadUpdate(update,{idleTimeout:10,fetcher:()=>new Promise(()=>{})}),/下载失败/);
+ let cancelled=false;
+ const stream=new ReadableStream({start(controller){controller.enqueue(new Uint8Array([1]));},cancel(){cancelled=true;}});
+ await assert.rejects(downloadUpdate(update,{idleTimeout:10,fetcher:async()=>new Response(stream)}),/下载超时/);
+ assert.equal(cancelled,true);
+});
+
 test('directory selection proves that the selected directory is the loaded extension and removes its probe',async()=>{
  const disk=fileSystem({'manifest.json':current,'background.js':'original'});
  const fetcher=async url=>new Response(disk.files.get(url));

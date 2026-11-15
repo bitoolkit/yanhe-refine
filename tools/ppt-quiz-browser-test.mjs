@@ -4,6 +4,7 @@ import {resolve,join,dirname,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {chromium} from 'playwright';
+import {currentTeachingTerm} from '../src/teaching-terms.js';
 import {installSignedOutRecoveryFixture} from './signed-out-recovery-fixture.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),scratch=await mkdtemp(join(tmpdir(),'yanhe-ppt-quiz-'));
@@ -34,7 +35,7 @@ await writeFile(contentPath,clipboardFixture+await readFile(contentPath,'utf8'))
 const report={mode:'isolated Edge, synthetic APIs, answers and clipboard; no real course submissions or system clipboard changes',checks:[]};
 const material={id:30,course_id:10,type:'material',title:'合成课件活动',published:true,is_in_progress:true,submit_times:1};
 const questions=[
- {id:100,type:'single_selection',description:'<p>单选题 $V^* = \\max_a Q(a)$</p><p>补充&nbsp;说明<br>第二行</p>',options:[{id:200,sort:0,content:'<p>选项一 &amp; 条件</p>'},{id:201,sort:1,content:'选项二'}]},
+ {id:100,type:'single_selection',description:'<p>单选题 $V^* = \\max_a Q(a)$</p><p>补充&nbsp;说明<br>第二行</p><img alt="题目配图" src="https://zy-media.bit.edu.cn/download/file/question.png"><img alt="不受支持的图片" src="https://outside.invalid/question.png">',options:[{id:200,sort:0,content:'<p>选项一 &amp; 条件</p>'},{id:201,sort:1,content:'选项二'}]},
  {id:101,type:'multiple_selection',description:'多选题',options:[{id:202,sort:0,content:'多选一'},{id:203,sort:1,content:'多选二'}]},
  {id:102,type:'true_or_false',description:'判断题',options:[{id:204,sort:0,content:'正确'},{id:205,sort:1,content:'错误'}]},
  {id:103,type:'fill_in_blank',answer_number:2,description:'填空题',options:[]},
@@ -74,11 +75,12 @@ try{
   }
   assert.equal(request.method(),'GET');
   if(url.hostname==='zy-media.bit.edu.cn'){
+   if(path==='/download/file/question.png')return route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jfZkAAAAASUVORK5CYII=','base64')});
    assert.equal(path,'/download/file/fixture.pdf');
    return route.fulfill({contentType:'application/pdf',headers:{'Accept-Ranges':'bytes'},body:pdfBytes});
   }
   if(url.hostname==='zy-eclass.bit.edu.cn'){
-   if(path==='/api/my-courses')return json({courses:[{id:10,name:'合成 PPT 课程',academic_year:{name:'2026-2027'},semester:{name:'第一学期'}}]});
+   if(path==='/api/my-courses')return json({courses:[{id:10,name:'合成 PPT 课程',academic_year:{name:currentTeachingTerm().slice(0,9)},semester:{name:currentTeachingTerm().endsWith('-1')?'第一学期':'第二学期'}}]});
    if(path==='/api/course/10/courseware-activities')return json([material]);
    if(path==='/api/courses/10/homework-activities')return json({page:1,pages:1,homework_activities:[{id:20,course_id:10,type:'homework',title:'普通作业',published:true,submitted:false}]});
    if(path.endsWith('/submission-status'))return json({homework_activities:[]});
@@ -109,6 +111,10 @@ try{
  await page.getByRole('button',{name:'未答课件.pdf · PPT 答题',exact:true}).click();
  await page.locator('.ppt-quiz-card').last().waitFor();assert.equal(await page.locator('.ppt-quiz-card').count(),5);
  assert.equal(await page.locator('.ppt-quiz-card math').count(),1);assert.equal(posts,0);
+ await page.getByAltText('题目配图',{exact:true}).evaluate(image=>image.decode());
+ assert.equal(await page.getByAltText('题目配图',{exact:true}).evaluate(image=>image.naturalWidth),1);
+ assert.equal(await page.locator('.ppt-quiz-card img').count(),1);
+ report.checks.push('school-media question images load while foreign image hosts remain filtered');
  const firstQuestion='1. 单选题\n单选题 $V^* = \\max_a Q(a)$\n补充 说明\n第二行\nA. 选项一 & 条件\nB. 选项二';
  const allQuestions=[firstQuestion,'2. 多选题\n多选题\nA. 多选一\nB. 多选二','3. 判断题\n判断题\nA. 正确\nB. 错误','4. 填空题\n填空题','5. 简答题\n简答题'].join('\n\n');
  await page.getByRole('button',{name:'复制第 1 题',exact:true}).click();
@@ -149,6 +155,20 @@ try{
  assert.equal(await page.getByLabel('1 题选项 1',{exact:true}).isChecked(),true);
  previewBlocked=false;await preview.getByRole('button',{name:'重新加载课件',exact:true}).click();await preview.locator('canvas[data-rendered=true]').first().waitFor();
  report.checks.push('mobile pane switching and retrying a failed preview preserve entered answers');
+ await page.getByLabel('1 题选项 1',{exact:true}).focus();
+ await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'继续填写',exact:true}).click();
+ assert.equal(await page.getByLabel('1 题选项 1',{exact:true}).isChecked(),true);
+ await page.getByLabel('1 题选项 1',{exact:true}).focus();
+ await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'保留草稿并关闭',exact:true}).click();
+ await page.locator('#resources-dialog').waitFor({state:'hidden'});
+ await page.reload();
+ await page.getByRole('button',{name:'未答课件.pdf · PPT 答题',exact:true}).click();
+ await page.getByText('已恢复本机保存的答案草稿',{exact:true}).waitFor();
+ assert.equal(await page.getByLabel('1 题选项 1',{exact:true}).isChecked(),true);
+ assert.equal(posts,0);
+ report.checks.push('Escape offers a safe continue action; closing with a saved draft and reloading restores answers without submitting');
  await page.getByLabel('1 题选项 1',{exact:true}).check();await page.getByLabel('2 题选项 1',{exact:true}).check();await page.getByLabel('2 题选项 2',{exact:true}).check();
  await page.getByLabel('3 题选项 1',{exact:true}).check();await page.getByLabel('4 题答案 1',{exact:true}).fill('填空一');await page.getByLabel('4 题答案 2',{exact:true}).fill('填空二');
  assert.equal(await page.getByRole('button',{name:'提交全部答案',exact:true}).isEnabled(),false);
@@ -179,6 +199,8 @@ try{
  report.checks.push('all five questions stay expanded, formulas use MathML, and single/multiple/judgment/fill/text inputs keep independent answers');
  await page.getByRole('button',{name:'提交全部答案',exact:true}).click();await page.getByText('答题已提交',{exact:true}).waitFor();
  assert.equal(posts,1);assert.equal(await page.locator('.ppt-quiz-option input:disabled').count(),6);
+ const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
+ assert.equal(await worker.evaluate(async()=>Object.keys(await chrome.storage.local.get(null)).filter(key=>key.startsWith('desk:quiz-draft:')).length),0);
  const detached=page.waitForEvent('framedetached',{predicate:frame=>frame.url().includes('courseware-viewer.html')});
  await page.getByRole('button',{name:'关闭',exact:true}).click();await detached;
  assert.equal(await page.locator('.ppt-copy-all,.ppt-copy-feedback').count(),0);

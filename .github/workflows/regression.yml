@@ -1,0 +1,45 @@
+name: Regression checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: choco install ffmpeg --yes --no-progress
+      - run: npm test
+      - name: Prepare synthetic fixtures
+        run: |
+          node tools/prepare-ci-data.mjs
+          npm run test:fixtures
+      - run: npm run build
+      - run: python tools/package.py
+      - run: python tools/verify-packages.py --with-imports
+      - name: Check browser workflows
+        shell: pwsh
+        run: |
+          $manifest = Get-Content src/manifest.json -Raw | ConvertFrom-Json
+          $suffix = if ($manifest.version_name -eq "$($manifest.version)-dev") { '-dev' } else { '' }
+          $env:EXTENSION_PATH = Join-Path (Get-Location) "dist/yanhe-refine-$($manifest.version)$suffix"
+          foreach ($script in @('site-browser-test', 'tasks-browser-test', 'ppt-quiz-browser-test', 'settings-browser-test', 'extension-update-browser-test')) {
+            node "tools/$script.mjs"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

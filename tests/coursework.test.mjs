@@ -7,7 +7,7 @@ import {AttachmentDownloads,safeDownloadUrl,safeFilename} from '../src/downloads
 
 const homework={id:20,course_id:10,type:'homework',published:true,title:'合成作业',is_in_progress:true,non_submit_times:true,data:{homework_type:'file_upload',mode:'normal',description:'<p>题目</p>'},uploads:[{id:30,reference_id:40,name:'fixture.zip',allow_download:true,size:3}]};
 const json=body=>new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
-const memory=()=>{const data={};return {get:async key=>({[key]:data[key]}),set:async values=>Object.assign(data,values),remove:async key=>delete data[key]};};
+const memory=()=>{const data={};return {get:async key=>key===null?{...data}:{[key]:data[key]},set:async values=>Object.assign(data,values),remove:async key=>delete data[key]};};
 function server(){
  const state={writes:[],history:[],fail:null,historyFail:false,storage:'LOCAL',receipt:'nested',userId:7,detail:structuredClone(homework),session:memory()};
  state.reader=new LmsReader(async(raw,options)=>{
@@ -74,6 +74,51 @@ test('ambiguous network failures survive worker restart without repeating the PO
  const s=server();s.fail='disconnect-unreadable';const payload={requestId:'test-request-0002',comment:'answer'};
  assert.equal((await s.writer.submit(10,20,payload)).status,'uncertain');
  const next=new LmsWriter(s.reader,{session:s.session});assert.equal((await next.submit(10,20,payload)).status,'uncertain');assert.equal(s.writes.length,1);
+});
+
+test('an uncertain ordinary submission blocks new request IDs and reconciles before checking exhausted attempts',async()=>{
+ const s=server();s.fail='disconnect-unreadable';
+ assert.equal((await s.writer.submit(10,20,{requestId:'audit-ordinary-0001',comment:'answer'})).status,'uncertain');
+ const accepted=s.history;
+ s.historyFail=false;s.history=[];
+ const next=new LmsWriter(s.reader,{session:s.session,cookies:s.writer.cookies});
+ assert.equal((await next.submit(10,20,{requestId:'audit-ordinary-0002',comment:'answer'})).status,'uncertain');
+ assert.equal(s.writes.length,1);
+ s.history=accepted;s.detail.non_submit_times=false;s.detail.submit_times=1;s.detail.user_submit_count=1;
+ assert.equal((await next.submit(10,20,{requestId:'audit-ordinary-0003',comment:'answer'})).status,'submitted');
+ assert.equal(s.writes.length,1);
+});
+
+test('reconciliation cannot label changed new content as submitted, and legacy uncertainty also blocks a new request ID',async()=>{
+ const s=server();s.fail='disconnect-unreadable';
+ await s.writer.submit(10,20,{requestId:'audit-changed-0001',comment:'first answer'});
+ s.historyFail=false;
+ await assert.rejects(s.writer.submit(10,20,{requestId:'audit-changed-0002',comment:'second answer'}),/上次提交已确认/);
+ assert.equal(s.writes.length,1);
+ const old=server();
+ await old.session.set({'desk:submission:7:10:20:old-request-0001':{status:'uncertain'}});
+ assert.equal((await old.writer.submit(10,20,{requestId:'audit-legacy-0001',comment:'answer'})).status,'uncertain');
+ assert.equal(old.writes.length,0);
+});
+
+test('different editor request IDs share an activity lock while an ordinary submission is running',async()=>{
+ const s=server();let release;
+ const original=s.writer.post.bind(s.writer);
+ s.writer.post=async(...args)=>{await new Promise(resolve=>release=resolve);return original(...args);};
+ const first=s.writer.submit(10,20,{requestId:'audit-flight-0001',comment:'answer'});
+ while(!release)await new Promise(resolve=>setImmediate(resolve));
+ await assert.rejects(s.writer.submit(10,20,{requestId:'audit-flight-0002',comment:'other'}),/正在提交/);
+ release();assert.equal((await first).status,'submitted');assert.equal(s.writes.length,1);
+});
+
+test('an ordinary submission journal survives a browser restart with a new session store',async()=>{
+ const s=server(),journal=memory();s.fail='disconnect-unreadable';
+ const first=new LmsWriter(s.reader,{session:s.session,journal,cookies:s.writer.cookies});
+ await first.submit(10,20,{requestId:'audit-persist-0001',comment:'answer'});
+ s.historyFail=false;s.history=[];
+ const restarted=new LmsWriter(s.reader,{session:memory(),journal,cookies:s.writer.cookies});
+ assert.equal((await restarted.submit(10,20,{requestId:'audit-persist-0002',comment:'answer'})).status,'uncertain');
+ assert.equal(s.writes.length,1);
 });
 
 test('submission receipts cannot be reused by another logged-in account with the same request ID',async()=>{

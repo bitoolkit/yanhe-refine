@@ -100,13 +100,20 @@ export function updatePackage(bytes,current,expectedVersion){
  return {manifest,files:ordered};
 }
 
-export async function downloadUpdate(update,{fetcher=fetch,onProgress=()=>{},signal}={}){
+export async function downloadUpdate(update,{fetcher=fetch,onProgress=()=>{},signal,idleTimeout=20000}={}){
  const prefix=RELEASE_REPO+'/releases/download/v'+update.latestVersion+'/';
  if(!update.downloadUrl?.startsWith(prefix)||!/^yanhe-refine-[\d.]+(?:-\d{8})?\.zip$/.test(update.downloadUrl.slice(prefix.length))){
   throw new Error('更新下载地址无效');
  }
+ const controller=new AbortController(),combined=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
+ async function whileActive(read){
+  let timer;
+  try{return await Promise.race([read(),new Promise((_,reject)=>{
+   timer=setTimeout(()=>{controller.abort();reject(new Error('更新包下载超时，请重试'));},idleTimeout);
+  })]);}finally{clearTimeout(timer);}
+ }
  let response;
- try{response=await fetcher(update.downloadUrl,{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal});}
+ try{response=await whileActive(()=>fetcher(update.downloadUrl,{credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal:combined}));}
  catch{throw new Error('更新包下载失败，请重试');}
  if(!response.ok)throw new Error('更新包下载失败，请重试');
  if(response.url){
@@ -120,7 +127,7 @@ export async function downloadUpdate(update,{fetcher=fetch,onProgress=()=>{},sig
  const reader=response.body.getReader();
  try{
   while(true){
-   const {value,done}=await reader.read();
+   const {value,done}=await whileActive(()=>reader.read());
    if(done)break;
    received+=value.length;
    if(received>MAX_UPDATE_BYTES)throw new Error('更新包过大');

@@ -7,10 +7,12 @@ import {chromium} from 'playwright';
 import {installSignedOutRecoveryFixture} from './signed-out-recovery-fixture.mjs';
 import {installMoodleFileFixture} from './moodle-file-fixture.mjs';
 import {createHash} from 'node:crypto';
+import {currentTeachingTerm} from '../src/teaching-terms.js';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),ext=resolve(process.env.EXTENSION_PATH||join(root,'extension'));
 const fixture=resolve(root,'tests/fixtures');
 const futureDeadline=days=>new Date(Date.now()+days*86400000).toISOString();
+const testTerm=currentTeachingTerm(),academicYear=testTerm.slice(0,9),semesterName=testTerm.endsWith('-1')?'第一学期':'第二学期';
 const output=join(root,'test-results'),testRoot=await mkdtemp(join(tmpdir(),'yanhe-refine-test-')),profile=join(testRoot,'profile'),testExt=join(testRoot,'extension');
 await cp(ext,testExt,{recursive:true});
 await installMoodleFileFixture(testExt);
@@ -24,7 +26,7 @@ await writeFile(contentScript,`(()=>{
  };
 })();\n`+await readFile(contentScript,'utf8'));
 await rm(join(testExt,'legacy-session-index.json'),{force:true}); // Keep synthetic legacy metadata independent of an optional personal snapshot.
-const testCourses=[{id:102178,title:'计算机视觉',teacher:'裴明涛',term:'2026-2027-1',platform:'modern'},...Array.from({length:20},(_,i)=>({id:70000+i,title:'计算机视觉',teacher:'裴明涛',term:'2024-2025-1',platform:'modern'})),{id:60001,title:'计算机视觉',teacher:'裴明涛',term:'2023-2024-1',platform:'legacy'},{id:73694,title:'计算机视觉',teacher:'张老师',term:'2025-2026-1',platform:'legacy'},{id:73694,title:'计算机视觉',teacher:'裴明涛',term:'2025-2026-2',platform:'modern'}];
+const testCourses=[{id:102178,title:'计算机视觉',teacher:'裴明涛',term:testTerm,platform:'modern'},...Array.from({length:20},(_,i)=>({id:70000+i,title:'计算机视觉',teacher:'裴明涛',term:'2024-2025-1',platform:'modern'})),{id:60001,title:'计算机视觉',teacher:'裴明涛',term:'2023-2024-1',platform:'legacy'},{id:73694,title:'计算机视觉',teacher:'张老师',term:'2025-2026-1',platform:'legacy'},{id:73694,title:'计算机视觉',teacher:'裴明涛',term:'2025-2026-2',platform:'modern'}];
 testCourses.push(...Array.from({length:45},(_,i)=>({id:85000+i,title:'分页课程',teacher:'分页老师',term:'2024-2025-1',platform:i%2?'modern':'legacy'})));
 const seed=JSON.stringify({courses:testCourses});await writeFile(join(testExt,'private-catalog.json'),seed);await writeFile(join(testExt,'build-info.json'),JSON.stringify({version:JSON.parse(await readFile(join(ext,'manifest.json'),'utf8')).version,catalog:{count:testCourses.length,sha256:createHash('sha256').update(seed).digest('hex')}}));
 await writeFile(join(testExt,'bundled-catalogs.json'),JSON.stringify({schema:1,catalogs:{}}));
@@ -54,9 +56,9 @@ try{
  const cookie=encodeURIComponent(`a:2:{i:0;s:6:"_token";i:1;s:${modernToken.length}:"${modernToken}";}`);
  await context.addCookies([{name:'_token',value:cookie,domain:'aita.yanhekt.cn',path:'/',secure:true,httpOnly:true,sameSite:'None'}]);
  await context.addCookies([{name:'XSRF-TOKEN',value:'fixture%20csrf',domain:'zy-eclass.bit.edu.cn',path:'/',secure:true,sameSite:'None'}]);
- const now=Date.now(),iso=t=>new Date(t).toISOString(),current={id:102178,title:'计算机视觉',realname:'裴明涛',term_name:'2026-2027-1',kkxy_name:'计算机学院',course_code:'EL3105',zhiyuan_id:20290};
- const live={id:102154,title:'强化学习',realname:'杨毅',term_name:'2026-2027-1',kkxy_name:'计算机学院'};
- const iot={id:110118,title:'人机协同的智能物联网应用设计',realname:'李海',term_name:'2026-2027-1',kkxy_name:'计算机学院'};
+ const now=Date.now(),iso=t=>new Date(t).toISOString(),current={id:102178,title:'计算机视觉',realname:'裴明涛',term_name:testTerm,kkxy_name:'计算机学院',course_code:'EL3105',zhiyuan_id:20290};
+ const live={id:102154,title:'强化学习',realname:'杨毅',term_name:testTerm,kkxy_name:'计算机学院'};
+ const iot={id:110118,title:'人机协同的智能物联网应用设计',realname:'李海',term_name:testTerm,kkxy_name:'计算机学院'};
  const replay=(id,title,start)=>({id,sub_title:title,type:'course_live',playback_status:'1',class_begin:start,sub_status:'3'});
  const liveRow={id:1630190,sub_title:'强化学习 · 第八讲',type:'course_live',playback_status:'0',sub_status:'1',class_begin:Math.floor(now/1000)-1000};
  await context.route('https://**/*',async route=>{
@@ -86,7 +88,7 @@ try{
   if(u.hostname==='zy-eclass.bit.edu.cn'){
    if(/^\/api\/courseware-quiz\/activity\/\d+\/quizzes$/.test(path))return json([]);
    if(lmsOffline)return route.fulfill({status:200,contentType:'text/html',body:'<html>Login</html>'});
-   if(path==='/api/my-courses')return json({courses:[{id:20290,name:'计算机视觉',course_code:'EL3105',academic_year:{id:81,name:'2026-2027'},semester:{id:901,real_name:'第一学期'}},...(crossCourse?[[20291,'操作系统'],[20292,'计算机组成与原理']].map(([id,name])=>({id,name,academic_year:{id:81,name:'2026-2027'},semester:{id:901,real_name:'第一学期'}})):[])]});
+   if(path==='/api/my-courses')return json({courses:[{id:20290,name:'计算机视觉',course_code:'EL3105',academic_year:{id:81,name:academicYear},semester:{id:901,real_name:semesterName}},...(crossCourse?[[20291,'操作系统'],[20292,'计算机组成与原理']].map(([id,name])=>({id,name,academic_year:{id:81,name:academicYear},semester:{id:901,real_name:semesterName}})):[])]});
    if(crossCourse&&/^\/api\/(?:course|courses)\/(20291|20292)\//.test(path)){const id=path.match(/(20291|20292)/)[0];if(path.endsWith('/courseware-activities')){if(id==='20291'&&delayOperatingSystem){operatingSystemStarted?.();await new Promise(resolve=>releaseOperatingSystem=resolve);}return json([{id:Number(id)+1000,course_id:Number(id),type:'material',title:id==='20291'?'操作系统新资料':'计算机组成与原理新资料',published:true}]);}if(path.endsWith('/homework-activities'))return json({page:1,pages:1,homework_activities:[]});if(path.endsWith('/submission-status'))return json({homework_activities:[]});}
    if(path==='/api/courses/20290/homework-activities')return json({page:1,pages:1,homework_activities:[{id:5956,title:'白平衡与伽马校正',published:true,submitted:true},{id:2413,title:'相机标定',published:true,submitted:false,deadline:futureDeadline(7)},{id:2414,title:'图像拼接（选做）',published:true,submit_by_group:true,deadline:futureDeadline(12)},{id:9999,title:'尚未发布的题目',published:false}]});
    if(path==='/api/course/20290/homework/submission-status')return json({homework_activities:[{id:5956,status:'submitted',score:99},{id:2413,status:'absent'},{id:2414,status:'absent'},{id:9999,status:'absent'}]});
@@ -122,12 +124,12 @@ try{
    if(path==='/userapi/v1/infosimple')return json({code:200,params:{id:123,tenant_id:21,phone:'13000001234',account:'student-fixture'}});
    if(offline&&path.startsWith('/courseapi/'))return route.fulfill({status:503,body:''});
    if(path==='/vlabpassportapi/v1/account-profile/course'&&enrolledBroken)return route.fulfill({status:503,contentType:'application/json',body:'{}'});
-   if(path==='/vlabpassportapi/v1/account-profile/course')return json({code:1000,params:{result:{data:[current,live,iot,...(crossCourse?[{id:910001,title:'操作系统',realname:'老师乙',term_name:'2026-2027-1',zhiyuan_id:20291},{id:910002,title:'计算机组成与原理',realname:'老师丙',term_name:'2026-2027-1',zhiyuan_id:20292}]:[])].map(r=>({Id:r.id,Title:r.title,Teacher:r.realname,TermName:r.term_name,kkxy_name:r.kkxy_name,zhiyuan_id:r.zhiyuan_id})),total:3}}});
-   if(path==='/vlabpassportapi/v1/course/term-list')return json({code:1000,params:{list:[{id:1,term_name:'2026-2027-1'}]}});
+   if(path==='/vlabpassportapi/v1/account-profile/course')return json({code:1000,params:{result:{data:[current,live,iot,...(crossCourse?[{id:910001,title:'操作系统',realname:'老师乙',term_name:testTerm,zhiyuan_id:20291},{id:910002,title:'计算机组成与原理',realname:'老师丙',term_name:testTerm,zhiyuan_id:20292}]:[])].map(r=>({Id:r.id,Title:r.title,Teacher:r.realname,TermName:r.term_name,kkxy_name:r.kkxy_name,zhiyuan_id:r.zhiyuan_id})),total:3}}});
+   if(path==='/vlabpassportapi/v1/course/term-list')return json({code:1000,params:{list:[{id:1,term_name:testTerm}]}});
    if(path==='/vlabpassportapi/v1/user/structures')return json({code:1000,params:{data:[{id:1,display_name:'计算机学院'}]}});
-   if(path.endsWith('/get-course-list')){const q=u.searchParams.get('title')||'',rows=(q==='分页课程'?[{id:99000,title:q,realname:'分页老师',term_name:'2026-2027-1'},{id:99001,title:q,realname:'分页老师',term_name:'2025-2026-1'}]:[current,live,iot]).filter(c=>c.title.includes(q));return json({code:0,data:{list:rows,total:rows.length}});}
+   if(path.endsWith('/get-course-list')){const q=u.searchParams.get('title')||'',rows=(q==='分页课程'?[{id:99000,title:q,realname:'分页老师',term_name:testTerm},{id:99001,title:q,realname:'分页老师',term_name:'2025-2026-1'}]:[current,live,iot]).filter(c=>c.title.includes(q));return json({code:0,data:{list:rows,total:rows.length}});}
    if(path.endsWith('/get-my-course-day'))return json({code:0,list:{day:{course:[{...live,course_id:live.id,sub_id:1630190,course_begin:iso(now-1200000),course_over:iso(now+2400000),room_name:'中教 101',sub_status:'1'},{...current,course_id:current.id,sub_id:1600001,course_begin:iso(now+7200000),course_over:iso(now+12600000),room_name:'综教 503',sub_status:'2'}]}}});
-   if(path.endsWith('/get-course-detail')){const n=Number(u.searchParams.get('course_id')),c=n===102154?live:n===110118?iot:crossCourse&&n===910001?{title:'操作系统',term_name:'2026-2027-1',zhiyuan_id:20291}:crossCourse&&n===910002?{title:'计算机组成与原理',term_name:'2026-2027-1',zhiyuan_id:20292}:current;return json({code:0,data:{...c,id:n,sub_list:n===102154?[liveRow]:[replay(1600001,'2026-09-22第8-9节',10),replay(1600002,'2026-09-29第8-9节',20)]}});}
+   if(path.endsWith('/get-course-detail')){const n=Number(u.searchParams.get('course_id')),c=n===102154?live:n===110118?iot:crossCourse&&n===910001?{title:'操作系统',term_name:testTerm,zhiyuan_id:20291}:crossCourse&&n===910002?{title:'计算机组成与原理',term_name:testTerm,zhiyuan_id:20292}:current;return json({code:0,data:{...c,id:n,sub_list:n===102154?[liveRow]:[replay(1600001,'2026-09-22第8-9节',10),replay(1600002,'2026-09-29第8-9节',20)]}});}
    if(path.endsWith('/get-course-teacher-others'))return json({code:0,data:[{id:1042,title:'cs',realname:'超级管理员'},{...current,id:999001,term_name:'2024-2025-1'}]});
    if(path.endsWith('/get-course-resource'))return json({code:0,data:u.searchParams.get('course_id')==='110118'?[{id:1,resource_id:'8001',resource_name:'智能物联网 · 课程大纲',resource_suffix:'txt',resource_size:17}]:[]});
    if(path==='/spidermaterial/spider-material/web/download/dlUrl')return json({state:200,data:'https://aita.yanhekt.cn/fixture/outline.txt'});
@@ -220,6 +222,10 @@ try{
  report.checks.push('file drops append and deduplicate attachments; invalid sizes, counts and directories preserve selection; file hover remains stable and outside drops cannot navigate');
  await picker.setInputFiles([]);assert.equal(await picked.count(),0);
  await dropFiles(form,[{name:'answer.zip',content:'synthetic answer',type:'application/zip'}]);assert.equal(await picked.count(),1);assert.match(await picked.innerText(),/answer\.zip/);
+ await picker.focus();await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'继续填写',exact:true}).click();
+ assert.equal(await picked.count(),1);assert.match(await page.getByLabel('作业内容',{exact:true}).inputValue(),/合成作业回答/);
+ report.checks.push('closing an unfinished ordinary homework asks for confirmation and continuing keeps text and selected files');
 
  assert.equal(requests.filter(r=>r.method==='POST'||r.method==='PUT').length,0,'selecting a local file does not upload it');
  await page.screenshot({path:join(output,'site-task.png'),fullPage:true});await page.setViewportSize({width:375,height:900});

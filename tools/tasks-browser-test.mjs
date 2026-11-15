@@ -13,7 +13,8 @@ const version=JSON.parse(await readFile(join(ext,'manifest.json'),'utf8')).versi
 await writeFile(join(ext,'build-info.json'),JSON.stringify({version,catalog:null}));
 await writeFile(join(ext,'bundled-catalogs.json'),JSON.stringify({schema:1,catalogs:{}}));
 await installSignedOutRecoveryFixture(ext);
-const now=Date.now(),day=86400000,due=days=>now+days*day;
+// Keep semester and cross-year deadline regressions independent of the runner's date.
+const now=Date.parse('2026-11-14T12:00:00+08:00'),day=86400000,due=days=>now+days*day;
 const cnDate=t=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(t));
 const oldCourses=[{id:601,fullname:'2026-2027第一学期-旧课程一',visible:true},{id:602,fullname:'2026-2027第一学期-旧课程二',visible:true},{id:603,fullname:'2025-2026第二学期-历史课程',visible:true},{id:604,fullname:'2027-2028第一学期-未来课程',visible:true}];
 const assignments=[{id:901,courseId:601,title:'旧课程当前作业一',deadline:due(7)},{id:902,courseId:601,title:'旧课程当前作业二',deadline:due(18)},{id:903,courseId:602,title:'另一门旧课程当前作业',deadline:due(30)},{id:904,courseId:603,title:'历史课程补交任务',deadline:due(2)},{id:905,courseId:604,title:'未来学期任务',deadline:due(75)},...Array.from({length:4},(_,i)=>({id:910+i,courseId:601,title:'已过期旧作业'+i,deadline:due(-2-i)}))];
@@ -25,6 +26,7 @@ let context,page,background,failedDetail=false,lexueConnected=false,slowNew=fals
 try{
  context=await chromium.launchPersistentContext(join(scratch,'profile'),{...(process.env.BROWSER_EXECUTABLE?{executablePath:process.env.BROWSER_EXECUTABLE}:process.platform==='win32'?{executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'}:{channel:'chromium'}),headless:true,ignoreDefaultArgs:['--disable-extensions'],args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`],viewport:{width:1440,height:1000}});
  context.setDefaultTimeout(15000);
+ await context.clock.setFixedTime(now);
  const worker=background=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker'),errors=[],requests=[];
  await worker.evaluate(()=>{globalThis.fixtureCourseReads=[];chrome.runtime.onMessage.addListener(message=>{if(message.type==='REFINE_READ'&&message.operation==='lms'&&message.args?.method==='courses')globalThis.fixtureCourseReads.push(message.args.args);});});
  await context.addCookies([{name:'_token',value:'eyJfixture.tasks.signature',domain:'aita.yanhekt.cn',path:'/',secure:true}]);
@@ -115,12 +117,14 @@ try{
  await waitCount(4);assert.equal(await page.getByText('部分作业详情未同步',{exact:false}).count(),0);
  report.checks.push('explicit refresh recovers the old assignment status and removes the warning after its detail endpoint becomes available');
  slowNew=true;
- await page.getByRole('button',{name:'刷新当前页',exact:true}).click();await waitCount(3);
- assert.ok((await page.locator('.task-row h3').allTextContents()).every(title=>title!=='新版当前作业'));
+ await page.getByRole('button',{name:'刷新当前页',exact:true}).click();await waitCount(4);
+ await page.getByText('含上次同步结果',{exact:false}).waitFor();
+ assert.ok((await page.locator('.task-row h3').allTextContents()).includes('新版当前作业'));
  await page.getByText(/已读取 .*门课程/).first().waitFor();assert.equal(typeof releaseNew,'function');
  slowNew=false;releaseNew();await waitCount(4);
  await page.locator('#learning-results[aria-busy="false"]').waitFor();
- report.checks.push('a slow LMS endpoint does not blank the entire task page: completed old tasks and progress appear before the new task finishes');
+ assert.equal(await page.getByText('含上次同步结果',{exact:false}).count(),0);
+ report.checks.push('a slow LMS refresh keeps all four previous tasks visible with a cached-result notice; fresh old tasks and progress appear immediately, and the notice clears when the new task finishes');
  slowOldCourses=true;
  await page.getByRole('button',{name:'刷新当前页',exact:true}).click();
  await page.locator('.task-row h3').getByText('新版当前作业',{exact:true}).waitFor();

@@ -4,7 +4,22 @@ import {updateStore} from './extension-update-store.js';
 
 const UPDATE_JOB='desk:update-job';
 const UPDATE_RETURN='desk:update-return';
-let flight,statusWrite=Promise.resolve();
+let flight,initialization,statusWrite=Promise.resolve();
+
+export function initializeExtensionUpdate(refresh=false){
+ if(!initialization||refresh){
+  const previous=initialization;
+  const current=(async()=>{await previous?.catch(()=>{});if(!flight)await finishExtensionUpdate();})();
+  initialization=current;
+  void current.catch(()=>{if(initialization===current)initialization=null;});
+ }
+ return initialization;
+}
+
+export async function extensionUpdateStatus(){
+ await initializeExtensionUpdate(true);
+ return (await chrome.storage.local.get(UPDATE_STATUS))[UPDATE_STATUS]||null;
+}
 
 function status(stage,text,details={}){
  const value={stage,text,version:chrome.runtime.getManifest().version,...details};
@@ -98,6 +113,7 @@ function launch(job){
 }
 
 export async function startExtensionUpdate(sender){
+ await initializeExtensionUpdate();
  if(flight)await flight;
  const saved=(await chrome.storage.session.get(UPDATE_JOB))[UPDATE_JOB];
  if(saved?.windowId){
@@ -109,6 +125,7 @@ export async function startExtensionUpdate(sender){
 
 export async function resumeExtensionUpdate(sender){
  if(sender?.url!==chrome.runtime.getURL('update.html'))throw new Error('更新授权来源无效');
+ await initializeExtensionUpdate();
  if(flight)await flight;
  const job=(await chrome.storage.session.get(UPDATE_JOB))[UPDATE_JOB];
  if(!job)throw new Error('更新已取消，请在设置中重试。');
@@ -122,6 +139,10 @@ export async function finishExtensionUpdate(){
  const completed=await updateStore.complete(chrome.runtime.getManifest().version);
  const pending=await updateStore.pending();
  let returnTab=(await chrome.storage.local.get(UPDATE_RETURN))[UPDATE_RETURN];
+ const job=(await chrome.storage.session.get(UPDATE_JOB))[UPDATE_JOB];
+ if(!pending&&!returnTab&&job?.windowId&&!job.authorized){
+  try{await chrome.windows.get(job.windowId);await status('authorize','请在授权窗口中允许更新。');return;}catch{}
+ }
  if(completed){
   const receipt=await updateStore.receipt();
   await status('complete','已更新到 '+receipt.to+'。');
@@ -132,7 +153,7 @@ export async function finishExtensionUpdate(){
   const saved=(await chrome.storage.local.get(UPDATE_STATUS))[UPDATE_STATUS];
   if(saved&&['checking','authorize','downloading','installing','restoring','reloading'].includes(saved.stage))await status('idle','上次更新已停止，可以重试。');
  }
- await chrome.storage.session.remove(UPDATE_JOB);
+ await closeAuthorization(job||{});
  if(!pending){
   await chrome.storage.local.remove(UPDATE_RETURN);
   if(returnTab){
